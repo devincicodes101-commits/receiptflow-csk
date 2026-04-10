@@ -1,0 +1,21 @@
+{
+  "name": "receiptflow-csk",
+  "version": "1.0.0",
+  "description": "Receipt extraction app for CSK Electric",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^2.1.1",
+    "openai": "^6.34.0",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

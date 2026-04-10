@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReceiptFlow — CSK Electric</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] } } }
+        }
+    </script>
+    <style>
+        :root {
+            --brand: #B8620A;
+            --brand-hover: #9A5309;
+            --brand-light: #FDF3E7;
+            --sidebar-bg: #111113;
+            --sidebar-hover: #1C1C1F;
+            --sidebar-active: #262629;
+        }
+        * { box-sizing: border-box; }
+        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; margin: 0; background: #F7F8FA; color: #1F2937; }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+        .sidebar { background: var(--sidebar-bg); width: 232px; min-width: 232px; display: flex; flex-direction: column; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; margin: 1px 8px; border-radius: 6px; color: #9CA3AF; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.12s ease; border-left: 3px solid transparent; user-select: none; }
+        .nav-item:hover { background: var(--sidebar-hover); color: #D1D5DB; }
+        .nav-item.active { background: var(--sidebar-active); color: #fff; border-left-color: var(--brand); }
+        .nav-item i { width: 18px; text-align: center; font-size: 13px; }
+        .nav-badge { margin-left: auto; background: #DC2626; color: #fff; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 10px; line-height: 1.5; }
+
+        .upload-zone { border: 2px dashed #D1D5DB; border-radius: 12px; padding: 56px 32px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: #fff; }
+        .upload-zone:hover { border-color: var(--brand); background: var(--brand-light); }
+        .upload-zone.dragover { border-color: var(--brand); background: var(--brand-light); transform: scale(1.01); }
+
+        .progress-bar { height: 4px; background: #E5E7EB; border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--brand), #E07B1A); border-radius: 2px; transition: width 0.6s ease; }
+
+        .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 600; }
+        .badge-posted { background: #ECFDF5; color: #059669; }
+        .badge-error { background: #FEF2F2; color: #DC2626; }
+        .badge-processing { background: #FFFBEB; color: #D97706; }
+
+        .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .data-table th { text-align: left; padding: 9px 12px; font-weight: 600; color: #6B7280; border-bottom: 1px solid #E5E7EB; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; background: #F9FAFB; }
+        .data-table td { padding: 11px 12px; border-bottom: 1px solid #F3F4F6; vertical-align: middle; }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:hover td { background: #FAFBFB; }
+
+        .toast { padding: 11px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; box-shadow: 0 4px 20px rgba(0,0,0,0.16); display: flex; align-items: center; gap: 9px; animation: slideIn 0.25s ease; max-width: 400px; }
+        .toast-success { background: #059669; color: #fff; }
+        .toast-error { background: #DC2626; color: #fff; }
+        .toast-info { background: #1F2937; color: #fff; }
+        .toast-warning { background: #D97706; color: #fff; }
+        @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
+
+        .toggle { position: relative; width: 38px; height: 21px; cursor: pointer; display: inline-block; }
+        .toggle input { display: none; }
+        .toggle-track { position: absolute; inset: 0; background: #D1D5DB; border-radius: 11px; transition: background 0.2s ease; }
+        .toggle-thumb { position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; background: #fff; border-radius: 50%; transition: transform 0.2s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.18); }
+        .toggle input:checked ~ .toggle-track { background: var(--brand); }
+        .toggle input:checked ~ .toggle-thumb { transform: translateX(17px); }
+
+        .form-input { width: 100%; padding: 7px 11px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; font-family: inherit; color: #1F2937; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
+        .form-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(184,98,10,0.08); }
+        .form-input::placeholder { color: #9CA3AF; }
+        .form-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; transition: all 0.12s ease; }
+        .btn-primary { background: var(--brand); color: #fff; }
+        .btn-primary:hover { background: var(--brand-hover); }
+        .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-secondary { background: #fff; color: #374151; border: 1px solid #D1D5DB; }
+        .btn-secondary:hover { background: #F9FAFB; }
+        .btn-danger { background: #fff; color: #DC2626; border: 1px solid #FECACA; }
+        .btn-danger:hover { background: #FEF2F2; }
+        .btn-ghost { background: transparent; color: #6B7280; padding: 4px 8px; }
+        .btn-ghost:hover { color: #374151; background: #F3F4F6; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        .job-input-valid { border-color: #059669 !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.08) !important; }
+        .job-input-missing { border-color: #DC2626 !important; box-shadow: 0 0 0 3px rgba(220,38,38,0.08) !important; }
+        .job-input-invalid { border-color: #D97706 !important; box-shadow: 0 0 0 3px rgba(217,119,6,0.08) !important; }
+
+        .inline-input { padding: 4px 8px; border: 1px solid var(--brand); border-radius: 4px; font-size: 13px; font-family: inherit; width: 130px; outline: none; box-shadow: 0 0 0 3px rgba(184,98,10,0.08); }
+
+        .stat-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 8px; padding: 14px 16px; }
+        .stat-value { font-size: 22px; font-weight: 800; color: #111827; line-height: 1.1; }
+        .stat-label { font-size: 11.5px; color: #6B7280; font-weight: 500; margin-top: 3px; }
+
+        .fade-in { animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+        .receipt-img-wrap { background: #F3F4F6; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #E5E7EB; }
+        .receipt-img-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+        .settings-section { border-bottom: 1px solid #E5E7EB; padding-bottom: 22px; margin-bottom: 22px; }
+        .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+        .spinner { display: inline-block; width: 60px; height: 60px; border: 4px solid #E5E7EB; border-top-color: var(--brand); border-radius: 50%; animation: spin 0.75s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .confidence-high { color: #059669; }
+        .confidence-medium { color: #D97706; }
+        .confidence-low { color: #DC2626; }
+
+        .ai-note { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400E; margin-top: 10px; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div style="padding:18px 14px 14px;border-bottom:1px solid #262629;">
+            <div style="display:flex;align-items:center;gap:9px;">
+                <div style="width:32px;height:32px;background:var(--brand);border-radius:7px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fa-solid fa-receipt" style="color:#fff;font-size:14px;"></i>
+                </div>
+                <div>
+                    <div style="color:#F9FAFB;font-size:14.5px;font-weight:700;letter-spacing:-0.01em;">ReceiptFlow</div>
+                    <div style="color:#6B7280;font-size:10px;font-weight:500;">CSK Electric</div>
+                </div>
+            </div>
+        </div>
+        <nav style="padding:10px 0;flex:1;overflow-y:auto;">
+            <div style="padding:0 14px 6px;font-size:10px;font-weight:600;color:#4B5563;text-transform:uppercase;letter-spacing:0.08em;">Main</div>
+            <div class="nav-item active" data-view="upload" onclick="navigate('upload')">
+                <i class="fa-solid fa-cloud-arrow-up"></i>Upload Receipt
+            </div>
+            <div class="nav-item" data-view="history" onclick="navigate('history')">
+                <i class="fa-solid fa-clock-rotate-left"></i>History
+            </div>
+            <div class="nav-item" data-view="errors" onclick="navigate('errors')">
+                <i class="fa-solid fa-triangle-exclamation"></i>Error Queue
+                <span class="nav-badge" id="error-badge" style="display:none;">0</span>
+            </div>
+            <div style="padding:14px 14px 6px;font-size:10px;font-weight:600;color:#4B5563;text-transform:uppercase;letter-spacing:0.08em;">System</div>
+            <div class="nav-item" data-view="settings" onclick="navigate('settings')">
+                <i class="fa-solid fa-gear"></i>Settings
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <header style="height:48px;border-bottom:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;">
+            <div id="breadcrumb" style="font-size:13px;color:#6B7280;">
+                <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span id="api-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
+                    <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Checking...
+                </span>
+            </div>
+        </header>
+        <main id="content" style="flex:1;overflow-y:auto;padding:24px;"></main>
+    </div>
+</div>
+
+<div id="toast-container" style="position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
+<input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none">
+
+<script>
+/* ── State ── */
+let state = {
+    view: 'upload',
+    history: [],
+    receipt: null,
+    uploading: false,
+    editingJobId: null,
+    settings: {
+        autoPost: false,
+        requireConfirm: true,
+        dailySummary: true,
+        category: 'Materials'
+    }
+};
+
+const API_BASE = 'http://localhost:3000';
+
+/* ── Utils ── */
+const fmt = n => {
+    if (n == null || isNaN(n)) return '—';
+    return '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+const fmtDate = d => {
+    if (!d) return '—';
+    try {
+        const dt = new Date(d + 'T00:00:00');
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch { return d; }
+};
+const genId = () => 'REC-' + (2041 + state.history.length + 1);
+const stats = () => {
+    const p = state.history.filter(r => r.status === 'posted');
+    const e = state.history.filter(r => r.status === 'error');
+    return {
+        total: state.history.length,
+        posted: p.length,
+        errors: e.length,
+        amount: p.reduce((s, r) => s + (r.amount || 0), 0)
+    };
+};
+
+function updateBadge() {
+    const c = state.history.filter(r => r.status === 'error').length;
+    const b = document.getElementById('error-badge');
+    if (!b) return;
+    b.textContent = c;
+    b.style.display = c > 0 ? 'inline' : 'none';
+}
+
+function toast(msg, type = 'info', duration = 3500) {
+    const c = document.getElementById('toast-container');
+    const t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    const icons = { success: 'fa-check-circle', error: 'fa-xmark-circle', info: 'fa-info-circle', warning: 'fa-exclamation-circle' };
+    t.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span>${msg}</span>`;
+    c.appendChild(t);
+    setTimeout(() => {
+        t.style.animation = 'slideOut 0.25s ease forwards';
+        setTimeout(() => t.remove(), 260);
+    }, duration);
+}
+
+/* ── API Health Check ── */
+async function checkHealth() {
+    const el = document.getElementById('api-status');
+    if (!el) return;
+    try {
+        const res = await fetch(API_BASE + '/api/health');
+        if (res.ok) {
+            el.innerHTML = '<i class="fa-solid fa-circle" style="color:#059669;font-size:8px;margin-right:4px;"></i>AI Ready (GPT-4o)';
+            el.style.color = '#059669';
+        } else {
+            throw new Error();
+        }
+    } catch {
+        el.innerHTML = '<i class="fa-solid fa-circle" style="color:#DC2626;font-size:8px;margin-right:4px;"></i>Server Offline';
+        el.style.color = '#DC2626';
+    }
+}
+
+/* ── Navigation ── */
+function navigate(view) {
+    state.view = view;
+    state.uploading = false;
+    state.receipt = null;
+    state.editingJobId = null;
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === view));
+    const titles = {
+        upload: 'Upload Receipt', history: 'Processing History',
+        errors: 'Error Queue', settings: 'Settings', review: 'Review Receipt'
+    };
+    const bc = document.getElementById('breadcrumb');
+    if (view === 'review') {
+        bc.innerHTML = '<span style="color:#6B7280;cursor:pointer;text-decoration:underline;text-decoration-color:#D1D5DB;" onclick="navigate(\'upload\')">Upload Receipt</span><span style="margin:0 6px;color:#D1D5DB;">/</span><span style="color:#1F2937;font-weight:600;">Review</span>';
+    } else {
+        bc.innerHTML = `<span style="color:#1F2937;font-weight:600;">${titles[view] || view}</span>`;
+    }
+    render();
+}
+
+/* ── Render Router ── */
+function render() {
+    const el = document.getElementById('content');
+    if (!el) return;
+    if (state.view === 'upload') el.innerHTML = state.uploading ? uploadingHTML() : uploadHTML();
+    else if (state.view === 'review') el.innerHTML = reviewHTML();
+    else if (state.view === 'history') el.innerHTML = historyHTML();
+    else if (state.view === 'errors') el.innerHTML = errorsHTML();
+    else if (state.view === 'settings') el.innerHTML = settingsHTML();
+    bind();
+}
+
+/* ── Upload View ── */
+function uploadHTML() {
+    const s = stats();
+    const hasHistory = state.history.length > 0;
+    return `<div class="fade-in" style="max-width:860px;">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
+            <div class="stat-card">
+                <div class="stat-value">${s.total}</div>
+                <div class="stat-label">Total Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color:#059669;">${s.posted}</div>
+                <div class="stat-label">Successfully Parsed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color:#DC2626;">${s.errors}</div>
+                <div class="stat-label">Errors / Flagged</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${fmt(s.amount)}</div>
+                <div class="stat-label">Total Extracted</div>
+            </div>
+        </div>
+
+        <div id="drop-zone" class="upload-zone">
+            <div style="margin-bottom:16px;">
+                <div style="width:64px;height:64px;background:var(--brand-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;">
+                    <i class="fa-solid fa-cloud-arrow-up" style="font-size:28px;color:var(--brand);"></i>
+                </div>
+            </div>
+            <div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:6px;">Drop your receipt here</div>
+            <div style="font-size:13px;color:#6B7280;margin-bottom:20px;">or click to browse files</div>
+            <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">
+                <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose File
+            </button>
+            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP, PDF — max 10MB</div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-robot" style="color:#9CA3AF;font-size:12px;"></i>
+            <span style="font-size:11.5px;color:#9CA3AF;">Powered by GPT-4o Vision — extracts vendor, amount, invoice number, line items, and job number (PO Box)</span>
+        </div>
+
+        ${hasHistory ? `
+        <div style="margin-top:28px;">
+            <div style="font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Recent Uploads</div>
+            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+                <table class="data-table">
+                    <thead><tr><th>Receipt</th><th>Vendor</th><th>Amount</th><th>Job (PO Box)</th><th>Status</th></tr></thead>
+                    <tbody>
+                    ${state.history.slice(0, 5).map(r => `<tr>
+                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:12px;">${r.id}</td>
+                        <td>${r.vendor || '—'}</td>
+                        <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
+                        <td style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${r.jobNo || 'Not found'}</td>
+                        <td><span class="badge badge-${r.status}">${r.status === 'posted' ? 'Parsed' : 'Error'}</span></td>
+                    </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>` : ''}
+    </div>`;
+}
+
+/* ── Uploading / Processing View ── */
+function uploadingHTML() {
+    return `<div class="fade-in" style="max-width:520px;margin:80px auto;text-align:center;">
+        <div style="margin-bottom:24px;">
+            <div class="spinner" style="margin:0 auto;"></div>
+        </div>
+        <div style="font-size:16px;font-weight:700;color:#1F2937;margin-bottom:6px;">Analyzing Receipt...</div>
+        <div style="font-size:13px;color:#6B7280;margin-bottom:24px;">GPT-4o is reading your receipt and extracting all details</div>
+        <div style="display:flex;flex-direction:column;gap:8px;text-align:left;background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:16px 20px;">
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:#6B7280;">
+                <i class="fa-solid fa-check" style="color:#059669;width:16px;"></i> Uploading image
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:#1F2937;font-weight:500;">
+                <i class="fa-solid fa-spinner fa-spin" style="color:var(--brand);width:16px;"></i> Reading with GPT-4o Vision
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:#9CA3AF;">
+                <i class="fa-regular fa-circle" style="width:16px;"></i> Extracting vendor &amp; amounts
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:#9CA3AF;">
+                <i class="fa-regular fa-circle" style="width:16px;"></i> Detecting job number (PO Box)
+            </div>
+        </div>
+    </div>`;
+}
+
+/* ── Review View ── */
+function reviewHTML() {
+    const r = state.receipt;
+    if (!r) return '<div>No receipt data</div>';
+
+    const jobClass = r.jobStatus === 'found' ? 'job-input-valid' : 'job-input-missing';
+    const jobIcon = r.jobStatus === 'found'
+        ? '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>'
+        : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
+    const jobMsg = r.jobStatus === 'found'
+        ? `<span style="font-size:11.5px;color:#059669;"><i class="fa-solid fa-check" style="font-size:10px;"></i> Found in receipt${r.poFieldLabel ? ` (${r.poFieldLabel})` : ''}</span>`
+        : '<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>';
+
+    const confClass = r.confidence === 'high' ? 'confidence-high' : r.confidence === 'medium' ? 'confidence-medium' : 'confidence-low';
+    const confIcon = r.confidence === 'high' ? 'fa-star' : r.confidence === 'medium' ? 'fa-star-half-stroke' : 'fa-star';
+
+    return `<div class="fade-in" style="max-width:980px;">
+        <div style="display:flex;gap:22px;">
+
+            <!-- Receipt Image -->
+            <div style="width:360px;flex-shrink:0;">
+                <div class="receipt-img-wrap" style="height:500px;">
+                    ${r.isPdf
+                        ? `<div style="text-align:center;padding:40px 20px;">
+                             <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
+                             <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
+                             <div style="font-size:11.5px;color:#9CA3AF;">Text extracted and analyzed by GPT-4o</div>
+                           </div>`
+                        : `<img src="${r.imageDataUrl || ''}" alt="Receipt"
+                               onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9CA3AF;font-size:13px;\\'>Preview unavailable</div>'">`
+                    }
+                </div>
+                <div style="margin-top:8px;text-align:center;font-size:11px;color:#9CA3AF;">
+                    <i class="fa-regular fa-${r.isPdf ? 'file-pdf' : 'image'}" style="margin-right:4px;"></i>
+                    ${r.isPdf ? 'PDF document' : 'Uploaded receipt'}
+                </div>
+                ${r.confidence ? `
+                <div style="margin-top:8px;background:#fff;border:1px solid #E5E7EB;border-radius:6px;padding:10px 12px;">
+                    <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">AI Confidence</div>
+                    <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;${confClass === 'confidence-high' ? 'color:#059669' : confClass === 'confidence-medium' ? 'color:#D97706' : 'color:#DC2626'}">
+                        <i class="fa-solid ${confIcon}"></i> ${(r.confidence || 'unknown').charAt(0).toUpperCase() + (r.confidence || '').slice(1)}
+                    </div>
+                    ${r.notes ? `<div style="margin-top:6px;font-size:11.5px;color:#6B7280;">${r.notes}</div>` : ''}
+                </div>` : ''}
+            </div>
+
+            <!-- Extracted Data -->
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                    <div style="font-size:16px;font-weight:700;color:#111827;">Extracted Receipt Details</div>
+                    <span style="font-size:11px;color:#9CA3AF;background:#F3F4F6;padding:3px 8px;border-radius:4px;">
+                        <i class="fa-solid fa-robot" style="margin-right:3px;color:var(--brand);"></i>GPT-4o Vision
+                    </span>
+                </div>
+
+                <!-- Fields -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                    <div>
+                        <label class="form-label">Vendor / Store</label>
+                        <input class="form-input" value="${escHtml(r.vendor || '')}" id="f-vendor">
+                    </div>
+                    <div>
+                        <label class="form-label">Invoice / Receipt Number</label>
+                        <input class="form-input" value="${escHtml(r.invoiceNo || '')}" id="f-invoice">
+                    </div>
+                    <div>
+                        <label class="form-label">Invoice Date</label>
+                        <input class="form-input" type="date" value="${r.date || ''}" id="f-date">
+                    </div>
+                    <div>
+                        <label class="form-label">Expense Category</label>
+                        <select class="form-input" id="f-category">
+                            <option ${state.settings.category === 'Materials' ? 'selected' : ''}>Materials</option>
+                            <option ${state.settings.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
+                            <option ${state.settings.category === 'Supplies' ? 'selected' : ''}>Supplies</option>
+                            <option ${state.settings.category === 'Tools' ? 'selected' : ''}>Tools</option>
+                            <option ${state.settings.category === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                ${r.address ? `
+                <div style="margin-bottom:16px;">
+                    <label class="form-label">Vendor Address</label>
+                    <input class="form-input" value="${escHtml(r.address)}" id="f-address" style="color:#6B7280;">
+                </div>` : ''}
+
+                <!-- Line Items -->
+                <div style="margin-bottom:16px;">
+                    <label class="form-label">Line Items</label>
+                    <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;">
+                        <table class="data-table" style="font-size:12.5px;">
+                            <thead>
+                                <tr>
+                                    <th style="padding:7px 10px;">Description</th>
+                                    <th style="padding:7px 10px;width:50px;text-align:center;">Qty</th>
+                                    <th style="padding:7px 10px;width:80px;text-align:right;">Unit</th>
+                                    <th style="padding:7px 10px;width:80px;text-align:right;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            ${(r.items || []).length > 0
+                                ? (r.items || []).map(i => `<tr>
+                                    <td style="padding:7px 10px;">${escHtml(i.desc || '—')}</td>
+                                    <td style="padding:7px 10px;text-align:center;color:#6B7280;">${i.qty != null ? i.qty : '—'}</td>
+                                    <td style="padding:7px 10px;text-align:right;color:#6B7280;font-variant-numeric:tabular-nums;">${i.unit != null ? fmt(i.unit) : '—'}</td>
+                                    <td style="padding:7px 10px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${fmt(i.total)}</td>
+                                  </tr>`).join('')
+                                : '<tr><td colspan="4" style="padding:12px 10px;text-align:center;color:#9CA3AF;font-size:12px;">No line items detected</td></tr>'
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Totals -->
+                <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:10px 14px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:flex-end;gap:32px;font-size:13px;">
+                        <div style="color:#6B7280;">Subtotal <span style="font-weight:600;color:#374151;margin-left:12px;">${fmt(r.subtotal)}</span></div>
+                        <div style="color:#6B7280;">Tax / Fees <span style="font-weight:600;color:#374151;margin-left:12px;">${fmt(r.tax)}</span></div>
+                        <div style="font-weight:800;color:#111827;font-size:14.5px;">Total <span style="margin-left:12px;">${fmt(r.total)}</span></div>
+                    </div>
+                </div>
+
+                <!-- Job Number -->
+                <div style="margin-bottom:20px;">
+                    <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(from PO Box on receipt)</span></label>
+                    <div style="position:relative;">
+                        <input class="form-input ${jobClass}" value="${escHtml(r.jobNo || '')}"
+                            placeholder="e.g. J-104625" id="f-jobno" style="padding-right:38px;">
+                        <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);">${jobIcon}</span>
+                    </div>
+                    <div style="margin-top:5px;">${jobMsg}</div>
+                </div>
+
+                <!-- Actions -->
+                <div style="display:flex;gap:8px;padding-top:16px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
+                    <button class="btn btn-primary" id="btn-save">
+                        <i class="fa-solid fa-floppy-disk" style="font-size:12px;"></i> Save to History
+                    </button>
+                    <button class="btn btn-danger" id="btn-flag">
+                        <i class="fa-solid fa-flag" style="font-size:11px;"></i> Flag as Error
+                    </button>
+                    <button class="btn btn-ghost" onclick="navigate('upload')" style="margin-left:auto;">
+                        <i class="fa-solid fa-xmark" style="font-size:11px;"></i> Discard
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+/* ── History View ── */
+function historyHTML() {
+    return `<div class="fade-in">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div style="font-size:15px;font-weight:700;color:#111827;">All Receipts <span style="font-size:13px;font-weight:500;color:#6B7280;margin-left:6px;">${state.history.length} total</span></div>
+            <div style="display:flex;gap:8px;">
+                <input class="form-input" placeholder="Search vendor or invoice..." style="width:220px;font-size:12.5px;" id="history-search">
+                <select class="form-input" style="width:130px;font-size:12.5px;" id="history-filter">
+                    <option value="all">All Status</option>
+                    <option value="posted">Parsed</option>
+                    <option value="error">Error</option>
+                </select>
+            </div>
+        </div>
+        ${state.history.length === 0
+            ? `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;text-align:center;padding:60px 20px;">
+                <i class="fa-solid fa-inbox" style="font-size:36px;color:#D1D5DB;margin-bottom:12px;display:block;"></i>
+                <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px;">No receipts yet</div>
+                <div style="font-size:13px;color:#9CA3AF;">Upload a receipt to get started</div>
+               </div>`
+            : `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
+                            <th>Amount</th><th>Job (PO Box)</th><th>Status</th><th>Saved At</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                    ${state.history.map(r => `<tr data-status="${r.status}" data-search="${(r.vendor || '').toLowerCase()} ${(r.invoiceNo || '').toLowerCase()}">
+                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:12px;">${r.id}</td>
+                        <td>${escHtml(r.vendor || '—')}</td>
+                        <td style="color:#6B7280;white-space:nowrap;">${fmtDate(r.date)}</td>
+                        <td style="font-family:monospace;font-size:12px;color:#6B7280;">${escHtml(r.invoiceNo || '—')}</td>
+                        <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
+                        <td><span style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
+                        <td><span class="badge badge-${r.status}">${r.status === 'posted' ? 'Parsed' : 'Error'}</span></td>
+                        <td style="color:#9CA3AF;font-size:12px;white-space:nowrap;">${r.savedAt || '—'}</td>
+                    </tr>`).join('')}
+                    </tbody>
+                </table>
+               </div>`
+        }
+    </div>`;
+}
+
+/* ── Error Queue View ── */
+function errorsHTML() {
+    const errs = state.history.filter(r => r.status === 'error');
+    if (!errs.length) return `<div class="fade-in" style="text-align:center;padding:60px 20px;">
+        <i class="fa-solid fa-circle-check" style="font-size:40px;color:#059669;margin-bottom:14px;display:block;"></i>
+        <div style="font-size:15px;font-weight:600;color:#1F2937;margin-bottom:4px;">All clear</div>
+        <div style="font-size:13px;color:#6B7280;">No receipts in the error queue.</div>
+    </div>`;
+
+    return `<div class="fade-in">
+        <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:4px;">Error Queue</div>
+        <div style="font-size:12.5px;color:#6B7280;margin-bottom:16px;">These receipts need attention. Assign a job number to resolve.</div>
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+            <table class="data-table">
+                <thead>
+                    <tr><th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Job Number</th><th>Reason</th><th style="width:150px;">Action</th></tr>
+                </thead>
+                <tbody>
+                ${errs.map(r => `<tr>
+                    <td style="font-weight:500;color:#374151;font-family:monospace;font-size:12px;">${r.id}</td>
+                    <td>${escHtml(r.vendor || '—')}</td>
+                    <td style="color:#6B7280;white-space:nowrap;">${fmtDate(r.date)}</td>
+                    <td style="font-weight:600;">${fmt(r.amount)}</td>
+                    <td>${state.editingJobId === r.id
+                        ? `<div style="display:flex;gap:4px;">
+                             <input class="inline-input" value="${escHtml(r.jobNo || '')}" placeholder="J-XXXXXX" id="edit-job-input">
+                             <button class="btn btn-primary btn-sm" onclick="saveJobAssign('${r.id}')">Save</button>
+                           </div>`
+                        : `<span style="font-family:monospace;font-size:12px;color:#DC2626;">${escHtml(r.jobNo || 'Missing')}</span>`
+                    }</td>
+                    <td style="font-size:12px;color:#6B7280;max-width:200px;">${escHtml(r.error || '')}</td>
+                    <td>${state.editingJobId === r.id ? ''
+                        : `<button class="btn btn-secondary btn-sm" onclick="startJobEdit('${r.id}')">
+                               <i class="fa-solid fa-pen" style="font-size:10px;"></i> Assign Job
+                           </button>`
+                    }</td>
+                </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>`;
+}
+
+/* ── Settings View ── */
+function settingsHTML() {
+    const s = state.settings;
+    return `<div class="fade-in" style="max-width:600px;">
+        <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:20px;">Settings</div>
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:20px;">
+            <div class="settings-section">
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">AI Extraction</div>
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
+                    <span style="color:#6B7280;">Model</span>
+                    <span style="font-weight:600;color:#374151;">GPT-4o Vision</span>
+                    <span style="color:#6B7280;">API Status</span>
+                    <span id="settings-api-status" style="color:#6B7280;">Checking...</span>
+                    <span style="color:#6B7280;">PO Detection</span>
+                    <span style="color:#374151;">Automatic (reads PO Box / Purchase Order field)</span>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Processing Rules</div>
+                <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <div style="color:#374151;font-weight:500;">Require confirmation before saving</div>
+                            <div style="font-size:11.5px;color:#9CA3AF;margin-top:1px;">Always show review screen after extraction</div>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" id="set-confirm" ${s.requireConfirm ? 'checked' : ''}>
+                            <span class="toggle-track"></span><span class="toggle-thumb"></span>
+                        </label>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="color:#374151;font-weight:500;">Default expense category</span>
+                        </div>
+                        <select class="form-input" style="width:160px;font-size:12.5px;" id="set-category">
+                            <option ${s.category === 'Materials' ? 'selected' : ''}>Materials</option>
+                            <option ${s.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
+                            <option ${s.category === 'Supplies' ? 'selected' : ''}>Supplies</option>
+                            <option ${s.category === 'Tools' ? 'selected' : ''}>Tools</option>
+                            <option ${s.category === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Job Number Detection</div>
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:start;font-size:13px;">
+                    <span style="color:#6B7280;">Source Field</span>
+                    <span style="color:#374151;">PO Box / Purchase Order on invoice</span>
+                    <span style="color:#6B7280;">How it works</span>
+                    <span style="color:#6B7280;font-size:12px;">The AI looks for any PO, PO #, PO Box, Purchase Order, Job #, or Reference field on the receipt and treats that as the Jobber job number.</span>
+                    <span style="color:#6B7280;">On Missing</span>
+                    <span style="color:#DC2626;font-weight:500;">Flag as error</span>
+                </div>
+            </div>
+            <div>
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">About</div>
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;font-size:13px;">
+                    <span style="color:#6B7280;">App</span>
+                    <span style="color:#374151;">ReceiptFlow v1.0</span>
+                    <span style="color:#6B7280;">Company</span>
+                    <span style="color:#374151;">CSK Electric</span>
+                    <span style="color:#6B7280;">User</span>
+                    <span style="color:#374151;">Chris Desaulniers (Admin)</span>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+/* ── Event Binding ── */
+function bind() {
+    // Drop zone
+    const dz = document.getElementById('drop-zone');
+    if (dz) {
+        dz.addEventListener('click', () => document.getElementById('file-input').click());
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', e => { if (!dz.contains(e.relatedTarget)) dz.classList.remove('dragover'); });
+        dz.addEventListener('drop', e => {
+            e.preventDefault();
+            dz.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+    }
+
+    // File input
+    const fi = document.getElementById('file-input');
+    if (fi) {
+        fi.addEventListener('change', e => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+            e.target.value = '';
+        });
+    }
+
+    // Review actions
+    const bSave = document.getElementById('btn-save');
+    if (bSave) bSave.addEventListener('click', saveReceipt);
+    const bFlag = document.getElementById('btn-flag');
+    if (bFlag) bFlag.addEventListener('click', flagError);
+
+    // History search/filter
+    const hs = document.getElementById('history-search');
+    if (hs) hs.addEventListener('input', filterHistory);
+    const hf = document.getElementById('history-filter');
+    if (hf) hf.addEventListener('change', filterHistory);
+
+    // Settings
+    const sConfirm = document.getElementById('set-confirm');
+    if (sConfirm) sConfirm.addEventListener('change', () => {
+        state.settings.requireConfirm = sConfirm.checked;
+        toast('Setting updated', 'success');
+    });
+    const sCat = document.getElementById('set-category');
+    if (sCat) sCat.addEventListener('change', () => {
+        state.settings.category = sCat.value;
+        toast('Setting updated', 'success');
+    });
+
+    // Job number live validation in review
+    const fjob = document.getElementById('f-jobno');
+    if (fjob) {
+        fjob.addEventListener('input', () => {
+            const v = fjob.value.trim();
+            if (!v) {
+                state.receipt.jobStatus = 'missing';
+                state.receipt.jobNo = '';
+            } else {
+                state.receipt.jobStatus = 'found';
+                state.receipt.jobNo = v;
+            }
+            render();
+        });
+    }
+
+    // Settings API status
+    const sapiEl = document.getElementById('settings-api-status');
+    if (sapiEl) {
+        fetch(API_BASE + '/api/health').then(r => r.ok ? r.json() : null).then(d => {
+            if (d) sapiEl.innerHTML = '<span style="color:#059669;font-weight:600;">Connected — GPT-4o</span>';
+            else sapiEl.innerHTML = '<span style="color:#DC2626;">Offline</span>';
+        }).catch(() => {
+            sapiEl.innerHTML = '<span style="color:#DC2626;">Server offline — run: node server.js</span>';
+        });
+    }
+
+    // Inline error queue edit focus
+    if (state.editingJobId) {
+        const inp = document.getElementById('edit-job-input');
+        if (inp) {
+            inp.focus();
+            inp.select();
+            inp.addEventListener('keydown', e => {
+                if (e.key === 'Enter') saveJobAssign(state.editingJobId);
+                if (e.key === 'Escape') { state.editingJobId = null; render(); }
+            });
+        }
+    }
+}
+
+function filterHistory() {
+    const search = (document.getElementById('history-search')?.value || '').toLowerCase();
+    const filter = document.getElementById('history-filter')?.value || 'all';
+    document.querySelectorAll('#history-tbody tr').forEach(tr => {
+        const matchSearch = !search || (tr.dataset.search || '').includes(search);
+        const matchFilter = filter === 'all' || tr.dataset.status === filter;
+        tr.style.display = matchSearch && matchFilter ? '' : 'none';
+    });
+}
+
+/* ── File Handling & Extraction ── */
+async function handleFile(file) {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+    if (!allowed.includes(file.type)) {
+        toast('Please upload a JPG, PNG, WEBP, or PDF file', 'error');
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        toast('File too large. Max 10MB.', 'error');
+        return;
+    }
+    state.uploading = true;
+    render();
+
+    const formData = new FormData();
+    formData.append('receipt', file);
+
+    try {
+        const res = await fetch(API_BASE + '/api/extract', {
+            method: 'POST',
+            body: formData
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+            throw new Error(json.error || 'Extraction failed');
+        }
+
+        state.uploading = false;
+        state.receipt = json.data;
+        state.view = 'review';
+
+        // Update breadcrumb
+        document.getElementById('breadcrumb').innerHTML =
+            '<span style="color:#6B7280;cursor:pointer;text-decoration:underline;text-decoration-color:#D1D5DB;" onclick="navigate(\'upload\')">Upload Receipt</span>' +
+            '<span style="margin:0 6px;color:#D1D5DB;">/</span>' +
+            '<span style="color:#1F2937;font-weight:600;">Review</span>';
+
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+
+        toast('Receipt analyzed successfully!', 'success');
+        render();
+
+    } catch (err) {
+        state.uploading = false;
+        render();
+        toast('Error: ' + (err.message || 'Could not extract receipt'), 'error', 5000);
+        console.error(err);
+    }
+}
+
+/* ── Save / Flag Actions ── */
+function saveReceipt() {
+    if (!state.receipt) return;
+    const r = state.receipt;
+
+    // Read any edits from the form
+    const vendor = document.getElementById('f-vendor')?.value || r.vendor;
+    const invoice = document.getElementById('f-invoice')?.value || r.invoiceNo;
+    const date = document.getElementById('f-date')?.value || r.date;
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || r.jobNo;
+    const category = document.getElementById('f-category')?.value || state.settings.category;
+
+    const now = new Date();
+    const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+        now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    state.history.unshift({
+        id: genId(),
+        vendor,
+        date,
+        amount: r.total,
+        jobNo: jobNo || null,
+        status: 'posted',
+        invoiceNo: invoice,
+        category,
+        savedAt,
+        items: r.items,
+        subtotal: r.subtotal,
+        tax: r.tax,
+        total: r.total,
+        confidence: r.confidence
+    });
+
+    updateBadge();
+    toast('Receipt saved to history' + (jobNo ? ' — Job: ' + jobNo : ''), 'success');
+    navigate('upload');
+}
+
+function flagError() {
+    if (!state.receipt) return;
+    const r = state.receipt;
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || r.jobNo;
+    const vendor = document.getElementById('f-vendor')?.value || r.vendor;
+
+    const now = new Date();
+    const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+        now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    state.history.unshift({
+        id: genId(),
+        vendor,
+        date: r.date,
+        amount: r.total,
+        jobNo: jobNo || null,
+        status: 'error',
+        invoiceNo: r.invoiceNo,
+        savedAt,
+        error: jobNo ? 'Manually flagged for review' : 'No job number (PO Box) found on receipt'
+    });
+
+    updateBadge();
+    toast('Receipt flagged and moved to error queue', 'info');
+    navigate('upload');
+}
+
+/* ── Error Queue Actions ── */
+function startJobEdit(id) {
+    state.editingJobId = id;
+    render();
+}
+
+function saveJobAssign(id) {
+    const inp = document.getElementById('edit-job-input');
+    if (!inp) return;
+    const val = inp.value.trim();
+    if (!val) { toast('Please enter a job number', 'error'); return; }
+
+    const rec = state.history.find(r => r.id === id);
+    if (rec) {
+        rec.jobNo = val;
+        rec.status = 'posted';
+        const now = new Date();
+        rec.savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+            now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        delete rec.error;
+    }
+
+    state.editingJobId = null;
+    updateBadge();
+    toast('Job number assigned — ' + val, 'success');
+    render();
+}
+
+/* ── HTML Escape ── */
+function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/* ── Init ── */
+checkHealth();
+updateBadge();
+render();
+</script>
+</body>
+</html>
