@@ -206,6 +206,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', model: 'gpt-4o' });
 });
 
-app.listen(PORT, () => {
-  console.log(`ReceiptFlow server running at http://localhost:${PORT}`);
-});
+// Export for Vercel serverless; also listen when run directly
+module.exports = app;
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`ReceiptFlow server running at http://localhost:${PORT}`);
+  });
+}
