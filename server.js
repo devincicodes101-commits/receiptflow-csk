@@ -13,7 +13,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
 
 // Store uploads in memory (base64) — no disk writes needed
 const storage = multer.memoryStorage();
