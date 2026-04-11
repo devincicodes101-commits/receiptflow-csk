@@ -266,7 +266,7 @@ async function jobberGQL(query, variables = {}) {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-JOBBER-GRAPHQL-VERSION': '2023-11-15'
+      'X-JOBBER-GRAPHQL-VERSION': '2026-03-10'
     },
     body: JSON.stringify({ query, variables })
   });
@@ -366,10 +366,10 @@ app.post('/api/create-expense', async (req, res) => {
 
     const num = parseInt(jobNo);
 
-    // Find job by job number
+    // Find job by searching, then exact-match on jobNumber
     const jobResult = await jobberGQL(`
       query {
-        jobs(filter: { jobNumber: ${num} }) {
+        jobs(searchTerm: "${num}") {
           nodes { id jobNumber title }
         }
       }
@@ -377,7 +377,8 @@ app.post('/api/create-expense', async (req, res) => {
 
     console.log('Jobber job lookup response:', JSON.stringify(jobResult));
 
-    const job = jobResult.data?.jobs?.nodes?.[0];
+    // Exact match — search can return partial matches
+    const job = jobResult.data?.jobs?.nodes?.find(j => j.jobNumber === num);
     if (!job) {
       return res.status(404).json({
         error: `Job #${jobNo} not found in Jobber. Check the job number and try again.`,
