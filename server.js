@@ -352,6 +352,35 @@ app.get('/api/debug/upload-mutations', async (req, res) => {
   }
 });
 
+// ── Debug: introspect upload input types ──
+app.get('/api/debug/upload-inputs', async (req, res) => {
+  try {
+    const fields = (type) => `
+      ${type}: __type(name: "${type}") {
+        inputFields {
+          name
+          description
+          type { name kind ofType { name kind ofType { name kind } } }
+        }
+      }
+    `;
+    // GraphQL doesn't support aliasing __type multiple times in one query easily,
+    // so run them sequentially
+    const [inv, jobNote, suppInv] = await Promise.all([
+      jobberGQL(`{ __type(name: "SupplierInvoiceUploadInput") { inputFields { name description type { name kind ofType { name kind } } } } }`),
+      jobberGQL(`{ __type(name: "JobNoteAddAttachmentInput") { inputFields { name description type { name kind ofType { name kind } } } } }`),
+      jobberGQL(`{ __type(name: "ClientNoteAddAttachmentInput") { inputFields { name description type { name kind ofType { name kind } } } } }`)
+    ]);
+    res.json({
+      SupplierInvoiceUploadInput: inv.data?.__type?.inputFields,
+      JobNoteAddAttachmentInput: jobNote.data?.__type?.inputFields,
+      ClientNoteAddAttachmentInput: suppInv.data?.__type?.inputFields
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Debug: introspect ExpenseCreateInput fields ──
 app.get('/api/debug/expense-schema', async (req, res) => {
   try {
