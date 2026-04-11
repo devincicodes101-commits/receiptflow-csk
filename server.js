@@ -35,9 +35,16 @@ CRITICAL CONTEXT:
 
 JOB NUMBER DETECTION (very important):
 - Look for a field explicitly labelled: "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "Purchase Order", "Customer PO", "Our Order No", "Ref", "Reference", "Job #"
-- Extract the VALUE from THAT field EXACTLY as printed (e.g. "1391-RETURN", "1408", "J-104625")
-- WARNING: Do NOT confuse "CUSTOMER NO" or "Account No" or "Customer #" with the PO number. Those are the vendor's internal account number for CSK Electric — ignore them entirely for job number detection.
-- If the PO field is blank or missing, set poBox to null. DO NOT substitute the customer number.
+- Extract the VALUE from THAT field EXACTLY as printed (e.g. "1178", "1249", "1391-RETURN")
+- If the PO field is blank or missing, set poBox to null. DO NOT substitute any other number.
+
+CRITICAL — GESCAN/SONEPAR INVOICES SPECIFICALLY:
+On every Gescan invoice there is a small two-column box near the top right that looks like this:
+  | CUSTOMER NO  | YOUR P.O. NO |
+  |    104625    |    1178      |
+- "CUSTOMER NO" (left column, always 104625 for CSK Electric) = Gescan's internal account number for CSK Electric. NEVER use this as the job number.
+- "YOUR P.O. NO" (right column, a small number like 1178, 1249, 1095) = the Jobber job number. ALWAYS use this.
+- If you see 104625 anywhere, it is the CUSTOMER NO — ignore it for job number purposes.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates or shipped dates.
