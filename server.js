@@ -468,7 +468,7 @@ app.get('/api/debug/jobber/:jobNo', async (req, res) => {
 // ── Create Jobber expense ──
 app.post('/api/create-expense', async (req, res) => {
   try {
-    const { vendor, invoiceNo, date, total, jobNo, signedBlobId } = req.body;
+    const { vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime } = req.body;
 
     if (!jobNo) {
       return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
@@ -505,8 +505,45 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
+    // Attach receipt: send through server so we can log exactly what Jobber returns
+    let receiptSignedBlobId = null;
+    if (receiptBase64 && receiptMime) {
+      try {
+        const buffer = Buffer.from(receiptBase64, 'base64');
+        const checksum = require('crypto').createHash('md5').update(buffer).digest('base64');
+        const ext = receiptMime.split('/')[1] || 'jpg';
+        const filename = `${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+        const token = await getJobberToken();
+
+        // Step 1: get presigned upload URL from Jobber ActiveStorage REST API
+        const initRes = await fetch('https://api.getjobber.com/rails/active_storage/direct_uploads', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blob: { filename, content_type: receiptMime, byte_size: buffer.length, checksum } })
+        });
+        const initText = await initRes.text();
+        console.log('ActiveStorage init:', initRes.status, initText.substring(0, 300));
+
+        if (initRes.ok) {
+          const blobData = JSON.parse(initText);
+          const { signed_id, direct_upload } = blobData;
+          if (direct_upload?.url && signed_id) {
+            // Step 2: PUT file to presigned URL
+            const putRes = await fetch(direct_upload.url, {
+              method: 'PUT',
+              headers: { ...direct_upload.headers, 'Content-Type': receiptMime },
+              body: buffer
+            });
+            console.log('ActiveStorage PUT:', putRes.status);
+            if (putRes.ok) receiptSignedBlobId = signed_id;
+          }
+        }
+      } catch (asErr) {
+        console.error('Receipt upload error:', asErr.message);
+      }
+    }
+
     // Create expense on that job
-    // signedBlobId comes from the browser (uploaded directly to Jobber S3 via /api/active-storage-token)
     const expInput = {
       linkedJobId: job.id,
       title: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
@@ -514,7 +551,7 @@ app.post('/api/create-expense', async (req, res) => {
       total: parseFloat(total) || 0,
       date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
     };
-    if (signedBlobId) expInput.receiptSignedBlobId = signedBlobId;
+    if (receiptSignedBlobId) expInput.receiptSignedBlobId = receiptSignedBlobId;
 
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {

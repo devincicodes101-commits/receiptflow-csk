@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ReceiptFlow — CSK Electric</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
@@ -312,50 +311,16 @@ async function postToJobber() {
     const date = document.getElementById('f-date')?.value || state.receipt.date;
     const total = state.receipt.total;
 
-    // Upload receipt directly from browser → S3 (Jobber ActiveStorage REST)
-    // File never touches Vercel — only tiny metadata goes through our server
-    let signedBlobId = null;
-    if (state.receipt.imageDataUrl && typeof SparkMD5 !== 'undefined') {
+    // Compress image and send to server (server handles ActiveStorage upload)
+    // Target ~100KB so it stays well under Vercel's 4.5MB payload limit
+    let receiptBase64 = null, receiptMime = null;
+    if (state.receipt.imageDataUrl) {
         try {
-            const compressed = await compressReceiptImage(state.receipt.imageDataUrl);
+            const compressed = await compressReceiptImage(state.receipt.imageDataUrl, 900, 0.70);
             const match = compressed.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-                const mimeType = match[1];
-                const binaryStr = atob(match[2]);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-
-                // MD5 checksum required by ActiveStorage integrity check
-                const rawMD5 = SparkMD5.ArrayBuffer.hash(bytes.buffer, true);
-                const checksum = btoa(rawMD5);
-                const filename = `receipt_${(invoiceNo || 'unknown').replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
-
-                // Step 1: get presigned S3 URL from our server (sends only metadata — tiny)
-                const tokenRes = await fetch(API_BASE + '/api/active-storage-token', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename, contentType: mimeType, byteSize: bytes.length, checksum })
-                });
-                const tokenData = await tokenRes.json();
-
-                if (!tokenData.uploadUrl) {
-                    console.warn('ActiveStorage init failed:', tokenData.error);
-                } else {
-                    // Step 2: PUT file DIRECTLY to S3 — never touches Vercel
-                    const putRes = await fetch(tokenData.uploadUrl, {
-                        method: 'PUT',
-                        headers: { ...tokenData.uploadHeaders, 'Content-Type': mimeType },
-                        body: bytes
-                    });
-                    if (putRes.ok) {
-                        signedBlobId = tokenData.signedBlobId;
-                    } else {
-                        console.warn('S3 PUT failed:', putRes.status, await putRes.text());
-                    }
-                }
-            }
-        } catch (uploadErr) {
-            console.warn('Receipt upload skipped:', uploadErr.message);
+            if (match) { receiptMime = match[1]; receiptBase64 = match[2]; }
+        } catch (e) {
+            console.warn('Image compression failed:', e.message);
         }
     }
 
@@ -363,7 +328,7 @@ async function postToJobber() {
         const res = await fetch(API_BASE + '/api/create-expense', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, signedBlobId })
+            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime })
         });
         const rawText = await res.text();
         let data;
