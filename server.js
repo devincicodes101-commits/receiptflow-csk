@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
-const https = require('https');
+const { put: blobPut } = require('@vercel/blob');
 const OpenAI = require('openai');
 
 const app = express();
@@ -594,82 +594,35 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
-    // Attach receipt via Jobber ActiveStorage REST API
-    let receiptSignedBlobId = null;
-    let receiptNote = receiptBase64 ? 'no image data' : null;
-
-    // DEBUG: log receipt input format at entry to create-expense
-    console.log('[DEBUG create-expense] receiptMime:', receiptMime);
-    console.log('[DEBUG create-expense] receiptBase64 type:', typeof receiptBase64);
-    console.log('[DEBUG create-expense] receiptBase64 length:', receiptBase64?.length);
-    console.log('[DEBUG create-expense] receiptBase64 sample:', receiptBase64?.substring(0, 80));
+    // Upload receipt to Vercel Blob → pass public URL to Jobber as receiptUrl.
+    // (Jobber's ActiveStorage /rails/active_storage/direct_uploads is blocked by Cloudflare
+    //  for server-to-server requests, so receiptSignedBlobId is not reachable.)
+    let receiptUrl = null;
+    let receiptNote = receiptBase64 ? null : null;
 
     if (receiptBase64 && receiptMime) {
       try {
-        const buffer = Buffer.from(receiptBase64, 'base64');
-        console.log('[DEBUG create-expense] decoded buffer length:', buffer.length, '| isBuffer:', Buffer.isBuffer(buffer));
-        const checksum = require('crypto').createHash('md5').update(buffer).digest('base64');
-        const ext = receiptMime.split('/')[1] || 'jpg';
-        const filename = `${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
-        const token = await getJobberToken();
-        const blobPayload = JSON.stringify({ blob: { filename, content_type: receiptMime, byte_size: buffer.length, checksum } });
-
-        // Try api.getjobber.com first, then app.getjobber.com (Rails app)
-        let initRes, initText;
-        for (const host of ['https://api.getjobber.com', 'https://app.getjobber.com']) {
-          initRes = await fetch(`${host}/rails/active_storage/direct_uploads`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: blobPayload
-          });
-          initText = await initRes.text();
-          console.log(`[DEBUG] ActiveStorage init (${host}):`, initRes.status, initText.substring(0, 200));
-          if (initRes.ok) break;
-        }
-
-        if (initRes.ok) {
-          const blobData = JSON.parse(initText);
-          const { signed_id, direct_upload } = blobData;
-          if (direct_upload?.url && signed_id) {
-            // Use Node.js https.request instead of fetch to avoid duplex/chunked-encoding issues.
-            // S3 presigned URLs require a known Content-Length and reject chunked transfer encoding.
-            const putHeaders = { ...direct_upload.headers, 'Content-Length': String(buffer.length) };
-            console.log('[DEBUG] ActiveStorage PUT url:', direct_upload.url.substring(0, 80));
-            console.log('[DEBUG] ActiveStorage PUT headers:', JSON.stringify(putHeaders));
-
-            const putResult = await new Promise((resolve, reject) => {
-              const putUrl = new URL(direct_upload.url);
-              const req = https.request({
-                hostname: putUrl.hostname,
-                path: putUrl.pathname + putUrl.search,
-                method: 'PUT',
-                headers: putHeaders
-              }, (resp) => {
-                let body = '';
-                resp.on('data', chunk => { body += chunk; });
-                resp.on('end', () => resolve({ status: resp.statusCode, body }));
-              });
-              req.on('error', reject);
-              req.write(buffer);
-              req.end();
-            });
-
-            console.log('[DEBUG] ActiveStorage PUT result:', putResult.status, putResult.body.substring(0, 300));
-            if (putResult.status >= 200 && putResult.status < 300) {
-              receiptSignedBlobId = signed_id;
-              receiptNote = 'attached';
-            } else {
-              receiptNote = `PUT ${putResult.status}: ${putResult.body.replace(/<[^>]+>/g, '').trim().substring(0, 100)}`;
-            }
-          } else {
-            receiptNote = `missing signed_id or url in response`;
-          }
+        if (!process.env.BLOB_READ_WRITE_TOKEN) {
+          receiptNote = 'no blob token';
         } else {
-          receiptNote = `init failed: ${initRes.status} — ${initText.substring(0, 120)}`;
+          const buffer = Buffer.from(receiptBase64, 'base64');
+          const ext = receiptMime === 'application/pdf' ? 'pdf' : (receiptMime.split('/')[1] || 'jpg');
+          const safeName = (invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_');
+          const blobPath = `receipts/${safeName}_${Date.now()}.${ext}`;
+
+          const blob = await blobPut(blobPath, buffer, {
+            access: 'public',
+            contentType: receiptMime,
+            token: process.env.BLOB_READ_WRITE_TOKEN
+          });
+
+          receiptUrl = blob.url;
+          receiptNote = 'attached';
+          console.log('[receipt] uploaded to Vercel Blob:', receiptUrl);
         }
-      } catch (asErr) {
-        receiptNote = `error: ${asErr.message}`;
-        console.error('[DEBUG] Receipt upload error:', asErr.stack || asErr.message);
+      } catch (blobErr) {
+        receiptNote = `blob error: ${blobErr.message}`;
+        console.error('[receipt] Vercel Blob upload failed:', blobErr.message);
       }
     }
 
@@ -681,7 +634,7 @@ app.post('/api/create-expense', async (req, res) => {
       total: parseFloat(total) || 0,
       date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
     };
-    if (receiptSignedBlobId) expInput.receiptSignedBlobId = receiptSignedBlobId;
+    if (receiptUrl) expInput.receiptUrl = receiptUrl;
 
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
