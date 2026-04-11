@@ -414,10 +414,19 @@ app.post('/api/create-expense', async (req, res) => {
     console.log('Jobber expense create response:', JSON.stringify(expResult));
 
     const errors = expResult.data?.expenseCreate?.userErrors;
-    if (errors?.length) return res.status(400).json({ error: errors[0].message });
+    if (errors?.length) return res.status(400).json({ error: errors[0].message, raw: expResult });
 
     const expense = expResult.data?.expenseCreate?.expense;
-    res.json({ success: true, expenseId: expense?.id, jobTitle: job.title });
+
+    // If expense is null with no userErrors, the mutation silently failed (likely a scope or input issue)
+    if (!expense?.id) {
+      return res.status(500).json({
+        error: 'Jobber accepted the request but returned no expense. This usually means the "Expenses" write scope is not enabled on your Jobber app, or the mutation input is missing a required field.',
+        raw: expResult
+      });
+    }
+
+    res.json({ success: true, expenseId: expense.id, jobTitle: job.title });
   } catch (err) {
     if (err.message === 'NOT_CONNECTED') {
       return res.status(401).json({ error: 'Not connected to Jobber. Go to Settings to connect.' });
