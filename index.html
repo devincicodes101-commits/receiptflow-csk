@@ -311,6 +311,11 @@ async function postToJobber() {
     const date = document.getElementById('f-date')?.value || state.receipt.date;
     const total = state.receipt.total;
 
+    // DEBUG: log what state.receipt holds before attachment
+    console.log('[DEBUG postToJobber] imageDataUrl type:', typeof state.receipt.imageDataUrl, '| length:', state.receipt.imageDataUrl?.length);
+    console.log('[DEBUG postToJobber] pdfDataUrl type:', typeof state.receipt.pdfDataUrl, '| length:', state.receipt.pdfDataUrl?.length);
+    console.log('[DEBUG postToJobber] isPdf:', state.receipt.isPdf);
+
     // Prepare receipt file for Jobber attachment
     let receiptBase64 = null, receiptMime = null;
     if (state.receipt.imageDataUrl) {
@@ -327,6 +332,10 @@ async function postToJobber() {
         const match = state.receipt.pdfDataUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (match) { receiptMime = match[1]; receiptBase64 = match[2]; }
     }
+
+    // DEBUG: log what we're sending to /api/create-expense
+    console.log('[DEBUG postToJobber] receiptMime:', receiptMime, '| receiptBase64 type:', typeof receiptBase64, '| length:', receiptBase64?.length);
+    console.log('[DEBUG postToJobber] receiptBase64 sample:', receiptBase64?.substring(0, 60));
 
     try {
         const res = await fetch(API_BASE + '/api/create-expense', {
@@ -914,6 +923,9 @@ async function handleFile(file) {
     }
     state.uploading = true;
     render();
+
+    // DEBUG: log what the browser is sending
+    console.log('[DEBUG handleFile] constructor:', file.constructor.name, '| mime:', file.type, '| size:', file.size);
 
     const formData = new FormData();
     formData.append('receipt', file);

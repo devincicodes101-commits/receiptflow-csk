@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
+const https = require('https');
 const OpenAI = require('openai');
 
 const app = express();
@@ -98,6 +99,11 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 
     const fileBuffer = req.file.buffer;
     const mimeType = req.file.mimetype;
+
+    // DEBUG: log what the server actually received
+    console.log('[DEBUG extract] mimetype:', mimeType);
+    console.log('[DEBUG extract] originalname:', req.file.originalname);
+    console.log('[DEBUG extract] buffer size:', fileBuffer.length, '| isBuffer:', Buffer.isBuffer(fileBuffer));
 
     let rawContent;
 
@@ -514,9 +520,17 @@ app.post('/api/create-expense', async (req, res) => {
     // Attach receipt via Jobber ActiveStorage REST API
     let receiptSignedBlobId = null;
     let receiptNote = receiptBase64 ? 'no image data' : null;
+
+    // DEBUG: log receipt input format at entry to create-expense
+    console.log('[DEBUG create-expense] receiptMime:', receiptMime);
+    console.log('[DEBUG create-expense] receiptBase64 type:', typeof receiptBase64);
+    console.log('[DEBUG create-expense] receiptBase64 length:', receiptBase64?.length);
+    console.log('[DEBUG create-expense] receiptBase64 sample:', receiptBase64?.substring(0, 80));
+
     if (receiptBase64 && receiptMime) {
       try {
         const buffer = Buffer.from(receiptBase64, 'base64');
+        console.log('[DEBUG create-expense] decoded buffer length:', buffer.length, '| isBuffer:', Buffer.isBuffer(buffer));
         const checksum = require('crypto').createHash('md5').update(buffer).digest('base64');
         const ext = receiptMime.split('/')[1] || 'jpg';
         const filename = `${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
@@ -532,7 +546,7 @@ app.post('/api/create-expense', async (req, res) => {
             body: blobPayload
           });
           initText = await initRes.text();
-          console.log(`ActiveStorage init (${host}):`, initRes.status, initText.substring(0, 200));
+          console.log(`[DEBUG] ActiveStorage init (${host}):`, initRes.status, initText.substring(0, 200));
           if (initRes.ok) break;
         }
 
@@ -540,22 +554,36 @@ app.post('/api/create-expense', async (req, res) => {
           const blobData = JSON.parse(initText);
           const { signed_id, direct_upload } = blobData;
           if (direct_upload?.url && signed_id) {
-            // Content-Length is required — S3 presigned URLs reject chunked transfer encoding
-            const putHeaders = {
-              ...direct_upload.headers,
-              'Content-Length': String(buffer.length)
-            };
-            console.log('ActiveStorage PUT headers:', JSON.stringify(putHeaders));
-            const putRes = await fetch(direct_upload.url, {
-              method: 'PUT',
-              headers: putHeaders,
-              body: buffer,
-              duplex: 'half'  // required in Node 18+ when setting Content-Length manually
+            // Use Node.js https.request instead of fetch to avoid duplex/chunked-encoding issues.
+            // S3 presigned URLs require a known Content-Length and reject chunked transfer encoding.
+            const putHeaders = { ...direct_upload.headers, 'Content-Length': String(buffer.length) };
+            console.log('[DEBUG] ActiveStorage PUT url:', direct_upload.url.substring(0, 80));
+            console.log('[DEBUG] ActiveStorage PUT headers:', JSON.stringify(putHeaders));
+
+            const putResult = await new Promise((resolve, reject) => {
+              const putUrl = new URL(direct_upload.url);
+              const req = https.request({
+                hostname: putUrl.hostname,
+                path: putUrl.pathname + putUrl.search,
+                method: 'PUT',
+                headers: putHeaders
+              }, (resp) => {
+                let body = '';
+                resp.on('data', chunk => { body += chunk; });
+                resp.on('end', () => resolve({ status: resp.statusCode, body }));
+              });
+              req.on('error', reject);
+              req.write(buffer);
+              req.end();
             });
-            const putBody = await putRes.text();
-            console.log('ActiveStorage PUT:', putRes.status, putBody.substring(0, 300));
-            if (putRes.ok) { receiptSignedBlobId = signed_id; receiptNote = 'attached'; }
-            else receiptNote = `PUT ${putRes.status}: ${putBody.replace(/<[^>]+>/g,'').trim().substring(0, 100)}`;
+
+            console.log('[DEBUG] ActiveStorage PUT result:', putResult.status, putResult.body.substring(0, 300));
+            if (putResult.status >= 200 && putResult.status < 300) {
+              receiptSignedBlobId = signed_id;
+              receiptNote = 'attached';
+            } else {
+              receiptNote = `PUT ${putResult.status}: ${putResult.body.replace(/<[^>]+>/g, '').trim().substring(0, 100)}`;
+            }
           } else {
             receiptNote = `missing signed_id or url in response`;
           }
@@ -564,7 +592,7 @@ app.post('/api/create-expense', async (req, res) => {
         }
       } catch (asErr) {
         receiptNote = `error: ${asErr.message}`;
-        console.error('Receipt upload error:', asErr.message);
+        console.error('[DEBUG] Receipt upload error:', asErr.stack || asErr.message);
       }
     }
 
