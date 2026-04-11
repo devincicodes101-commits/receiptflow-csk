@@ -4,6 +4,7 @@ const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const OpenAI = require('openai');
 const { put: blobPut } = require('@vercel/blob');
 
@@ -281,6 +282,52 @@ async function jobberGQL(query, variables = {}) {
   return res.json();
 }
 
+// ── Upload file to Jobber via Rails ActiveStorage REST endpoint ──
+// Returns signedBlobId (used as receiptSignedBlobId in expenseCreate) or null on failure
+async function uploadToJobberActiveStorage(fileBuffer, mimeType, filename) {
+  const token = await getJobberToken();
+  const checksum = crypto.createHash('md5').update(fileBuffer).digest('base64');
+
+  // Step 1: request a presigned upload URL from Jobber's ActiveStorage REST API
+  const initRes = await fetch('https://api.getjobber.com/rails/active_storage/direct_uploads', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      blob: { filename, content_type: mimeType, byte_size: fileBuffer.length, checksum }
+    })
+  });
+
+  if (!initRes.ok) {
+    const body = await initRes.text();
+    console.error('ActiveStorage init failed:', initRes.status, body);
+    return null;
+  }
+
+  const blobData = await initRes.json();
+  const { signed_id, direct_upload } = blobData;
+  if (!direct_upload?.url || !signed_id) {
+    console.error('ActiveStorage response missing fields:', JSON.stringify(blobData));
+    return null;
+  }
+
+  // Step 2: PUT the file to the presigned URL (usually S3)
+  const putRes = await fetch(direct_upload.url, {
+    method: 'PUT',
+    headers: { ...direct_upload.headers, 'Content-Type': mimeType },
+    body: fileBuffer
+  });
+
+  if (!putRes.ok) {
+    console.error('ActiveStorage PUT failed:', putRes.status, await putRes.text());
+    return null;
+  }
+
+  return signed_id;
+}
+
 // ── Jobber auth routes ──
 app.get('/api/auth/jobber', (req, res) => {
   const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
@@ -479,21 +526,29 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
-    // Upload receipt to Vercel Blob (if image provided and token configured)
+    // Attach receipt: try Jobber ActiveStorage first (real file), fall back to Vercel Blob URL
+    let signedBlobId = null;
     let receiptUrl = null;
-    if (receiptBase64 && receiptMime && process.env.BLOB_READ_WRITE_TOKEN) {
+    if (receiptBase64 && receiptMime) {
+      const buffer = Buffer.from(receiptBase64, 'base64');
+      const ext = receiptMime.split('/')[1] || 'jpg';
+      const filename = `${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
       try {
-        const buffer = Buffer.from(receiptBase64, 'base64');
-        const ext = receiptMime.split('/')[1] || 'jpg';
-        const blob = await blobPut(
-          `receipts/${Date.now()}-${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`,
-          buffer,
-          { access: 'public', contentType: receiptMime, token: process.env.BLOB_READ_WRITE_TOKEN }
-        );
-        receiptUrl = blob.url;
-        console.log('Receipt uploaded to Vercel Blob:', receiptUrl);
-      } catch (blobErr) {
-        console.error('Vercel Blob upload failed (continuing without receipt):', blobErr.message);
+        signedBlobId = await uploadToJobberActiveStorage(buffer, receiptMime, filename);
+        if (signedBlobId) console.log('Receipt uploaded via Jobber ActiveStorage');
+      } catch (asErr) {
+        console.error('ActiveStorage upload failed:', asErr.message);
+      }
+      // Fall back to Vercel Blob if ActiveStorage didn't work
+      if (!signedBlobId && process.env.BLOB_READ_WRITE_TOKEN) {
+        try {
+          const blob = await blobPut(`receipts/${Date.now()}-${filename}`, buffer,
+            { access: 'public', contentType: receiptMime, token: process.env.BLOB_READ_WRITE_TOKEN });
+          receiptUrl = blob.url;
+          console.log('Receipt uploaded to Vercel Blob:', receiptUrl);
+        } catch (blobErr) {
+          console.error('Vercel Blob upload failed:', blobErr.message);
+        }
       }
     }
 
@@ -505,7 +560,8 @@ app.post('/api/create-expense', async (req, res) => {
       total: parseFloat(total) || 0,
       date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
     };
-    if (receiptUrl) expInput.receiptUrl = receiptUrl;
+    if (signedBlobId) expInput.receiptSignedBlobId = signedBlobId;
+    else if (receiptUrl) expInput.receiptUrl = receiptUrl;
 
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
