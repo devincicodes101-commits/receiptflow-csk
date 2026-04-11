@@ -407,7 +407,7 @@ function uploadHTML() {
             <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">
                 <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose File
             </button>
-            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP, PDF — max 10MB</div>
+            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP, PDF — max 4MB</div>
         </div>
 
         <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
@@ -894,8 +894,8 @@ async function handleFile(file) {
         toast('Please upload a JPG, PNG, WEBP, or PDF file', 'error');
         return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-        toast('File too large. Max 10MB.', 'error');
+    if (file.size > 4 * 1024 * 1024) {
+        toast('File too large. Max 4MB (Vercel limit).', 'error');
         return;
     }
     state.uploading = true;

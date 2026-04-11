@@ -17,7 +17,7 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4MB — Vercel serverless hard limit is 4.5MB
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
     if (allowed.includes(file.mimetype)) cb(null, true);
@@ -231,7 +231,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     console.error('Extraction error:', err);
 
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+      return res.status(400).json({ error: 'File too large. Maximum size is 4MB.' });
     }
     if (err.status === 401) {
       return res.status(500).json({ error: 'Invalid OpenAI API key.' });
