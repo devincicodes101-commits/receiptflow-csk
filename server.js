@@ -333,14 +333,23 @@ app.get('/api/auth/status', async (req, res) => {
 app.get('/api/debug/jobber/:jobNo', async (req, res) => {
   try {
     const num = parseInt(req.params.jobNo);
-    const result = await jobberGQL(`
-      query {
-        jobs(filter: { jobNumber: ${num} }) {
-          nodes { id jobNumber title }
-        }
-      }
+
+    // Try filter by jobNumber
+    const byFilter = await jobberGQL(`
+      query { jobs(filter: { jobNumber: ${num} }) { nodes { id jobNumber title } } }
     `);
-    res.json(result);
+
+    // Try searchTerm
+    const bySearch = await jobberGQL(`
+      query { jobs(searchTerm: "${num}") { nodes { id jobNumber title } } }
+    `);
+
+    // Get a few jobs to see total count and field structure
+    const sample = await jobberGQL(`
+      query { jobs(first: 3) { totalCount nodes { id jobNumber title } } }
+    `);
+
+    res.json({ byFilter, bySearch, sample });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
