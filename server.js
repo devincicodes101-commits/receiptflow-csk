@@ -505,8 +505,9 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
-    // Attach receipt: send through server so we can log exactly what Jobber returns
+    // Attach receipt via Jobber ActiveStorage REST API
     let receiptSignedBlobId = null;
+    let receiptNote = receiptBase64 ? 'no image data' : null;
     if (receiptBase64 && receiptMime) {
       try {
         const buffer = Buffer.from(receiptBase64, 'base64');
@@ -514,31 +515,41 @@ app.post('/api/create-expense', async (req, res) => {
         const ext = receiptMime.split('/')[1] || 'jpg';
         const filename = `${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
         const token = await getJobberToken();
+        const blobPayload = JSON.stringify({ blob: { filename, content_type: receiptMime, byte_size: buffer.length, checksum } });
 
-        // Step 1: get presigned upload URL from Jobber ActiveStorage REST API
-        const initRes = await fetch('https://api.getjobber.com/rails/active_storage/direct_uploads', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ blob: { filename, content_type: receiptMime, byte_size: buffer.length, checksum } })
-        });
-        const initText = await initRes.text();
-        console.log('ActiveStorage init:', initRes.status, initText.substring(0, 300));
+        // Try api.getjobber.com first, then app.getjobber.com (Rails app)
+        let initRes, initText;
+        for (const host of ['https://api.getjobber.com', 'https://app.getjobber.com']) {
+          initRes = await fetch(`${host}/rails/active_storage/direct_uploads`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: blobPayload
+          });
+          initText = await initRes.text();
+          console.log(`ActiveStorage init (${host}):`, initRes.status, initText.substring(0, 200));
+          if (initRes.ok) break;
+        }
 
         if (initRes.ok) {
           const blobData = JSON.parse(initText);
           const { signed_id, direct_upload } = blobData;
           if (direct_upload?.url && signed_id) {
-            // Step 2: PUT file to presigned URL
             const putRes = await fetch(direct_upload.url, {
               method: 'PUT',
               headers: { ...direct_upload.headers, 'Content-Type': receiptMime },
               body: buffer
             });
             console.log('ActiveStorage PUT:', putRes.status);
-            if (putRes.ok) receiptSignedBlobId = signed_id;
+            if (putRes.ok) { receiptSignedBlobId = signed_id; receiptNote = 'attached'; }
+            else receiptNote = `PUT failed: ${putRes.status}`;
+          } else {
+            receiptNote = `missing signed_id or url in response`;
           }
+        } else {
+          receiptNote = `init failed: ${initRes.status} — ${initText.substring(0, 120)}`;
         }
       } catch (asErr) {
+        receiptNote = `error: ${asErr.message}`;
         console.error('Receipt upload error:', asErr.message);
       }
     }
@@ -577,7 +588,7 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
-    res.json({ success: true, expenseId: expense.id, jobTitle: job.title });
+    res.json({ success: true, expenseId: expense.id, jobTitle: job.title, receiptNote });
   } catch (err) {
     if (err.message === 'NOT_CONNECTED') {
       return res.status(401).json({ error: 'Not connected to Jobber. Go to Settings to connect.' });

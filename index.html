@@ -338,7 +338,9 @@ async function postToJobber() {
             throw new Error(data.error || 'Failed to create expense');
         }
 
-        toast(`Expense posted to Jobber! Job: ${data.jobTitle || jobNo}`, 'success', 5000);
+        const receiptMsg = data.receiptNote === 'attached' ? ' + receipt attached ✓'
+            : data.receiptNote ? ` (receipt: ${data.receiptNote})` : '';
+        toast(`Expense posted to Jobber! Job: ${data.jobTitle || jobNo}${receiptMsg}`, 'success', 7000);
 
         // Also save to history
         saveReceipt();
