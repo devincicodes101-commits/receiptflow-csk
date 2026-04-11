@@ -449,6 +449,83 @@ app.get('/api/debug/expense-schema', async (req, res) => {
   }
 });
 
+// ── Debug: full receipt upload pipeline test ──
+// Tests ActiveStorage init on all known hosts, shows raw responses,
+// and introspects what receipt fields ExpenseCreateInput accepts.
+app.get('/api/debug/receipt-pipeline', async (req, res) => {
+  const results = {};
+  try {
+    const token = await getJobberToken();
+
+    // Step 1: What does ExpenseCreateInput accept for receipts?
+    const schemaResult = await jobberGQL(`{
+      __type(name: "ExpenseCreateInput") {
+        inputFields {
+          name
+          description
+          type { name kind ofType { name kind ofType { name kind } } }
+        }
+      }
+    }`);
+    const allFields = schemaResult.data?.__type?.inputFields || [];
+    results.expenseInputFields = allFields.map(f => ({
+      name: f.name,
+      description: f.description,
+      type: f.type
+    }));
+    results.receiptRelatedFields = allFields
+      .filter(f => /receipt|blob|file|attach|image|photo|url/i.test(f.name + ' ' + (f.description || '')))
+      .map(f => ({ name: f.name, description: f.description }));
+
+    // Step 2: Test ActiveStorage init on each known host with a tiny 1x1 white JPEG
+    const tiny1x1JpegBase64 =
+      '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAARC' +
+      'AABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
+    const tinyBuf = Buffer.from(tiny1x1JpegBase64, 'base64');
+    const checksum = require('crypto').createHash('md5').update(tinyBuf).digest('base64');
+    const blobPayload = JSON.stringify({
+      blob: { filename: 'test.jpg', content_type: 'image/jpeg', byte_size: tinyBuf.length, checksum }
+    });
+
+    results.activeStorageTests = {};
+    for (const host of ['https://api.getjobber.com', 'https://app.getjobber.com']) {
+      try {
+        const r = await fetch(`${host}/rails/active_storage/direct_uploads`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: blobPayload
+        });
+        const body = await r.text();
+        let parsed = null;
+        try { parsed = JSON.parse(body); } catch {}
+        results.activeStorageTests[host] = {
+          status: r.status,
+          ok: r.ok,
+          bodyRaw: body.substring(0, 400),
+          parsed,
+          responseHeaders: Object.fromEntries(r.headers.entries())
+        };
+      } catch (fetchErr) {
+        results.activeStorageTests[host] = { error: fetchErr.message, stack: fetchErr.stack?.split('\n').slice(0,4) };
+      }
+    }
+
+    // Step 3: If ActiveStorage succeeded, show the shape of the response
+    const successHost = Object.entries(results.activeStorageTests).find(([, v]) => v.ok);
+    if (successHost) {
+      results.activeStorageSucceeded = true;
+      results.note = 'ActiveStorage init worked — signed_id and direct_upload.url are available. S3 PUT can proceed.';
+    } else {
+      results.activeStorageSucceeded = false;
+      results.note = 'ActiveStorage init failed on all hosts. Need to find another way to attach receipt.';
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message, partial: results });
+  }
+});
+
 
 // ── Debug: see raw Jobber job lookup response ──
 app.get('/api/debug/jobber/:jobNo', async (req, res) => {
