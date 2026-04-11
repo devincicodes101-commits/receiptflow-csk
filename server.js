@@ -583,8 +583,11 @@ app.post('/api/create-expense', async (req, res) => {
     }
 
     const num = parseInt(jobNo);
+    if (isNaN(num)) {
+      return res.status(400).json({ error: `"${jobNo}" is not a valid job number.` });
+    }
 
-    // Find job by searching (first:100 to avoid missing it), then exact-match on jobNumber
+    // Find job — search by number, then exact-match (handle both int and string jobNumber)
     const jobResult = await jobberGQL(`
       query {
         jobs(first: 100, searchTerm: "${num}") {
@@ -604,12 +607,13 @@ app.post('/api/create-expense', async (req, res) => {
       return res.status(400).json({ error: 'Jobber API error: ' + gqlMsg });
     }
 
-    // Exact match — search can return partial matches
-    const job = jobResult.data?.jobs?.nodes?.find(j => j.jobNumber === num);
+    // Exact match — compare as numbers regardless of whether Jobber returns int or string
+    const nodes = jobResult.data?.jobs?.nodes || [];
+    const job = nodes.find(j => Number(j.jobNumber) === num);
     if (!job) {
       return res.status(404).json({
-        error: `Job #${jobNo} not found in Jobber. Check the job number and try again.`,
-        debug: { searched: num, returned: jobResult.data?.jobs?.nodes }
+        error: `Job #${num} not found in Jobber. Check the job number and try again.`,
+        debug: { searched: num, returned: nodes }
       });
     }
 
