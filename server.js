@@ -266,7 +266,7 @@ async function jobberGQL(query, variables = {}) {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-JOBBER-GRAPHQL-VERSION': '2024-04-03'
+      'X-JOBBER-GRAPHQL-VERSION': '2023-11-15'
     },
     body: JSON.stringify({ query, variables })
   });
