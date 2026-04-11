@@ -352,30 +352,41 @@ app.get('/api/debug/upload-mutations', async (req, res) => {
   }
 });
 
-// ── Debug: introspect upload input types ──
+// ── Debug: introspect upload input types by finding real type names from mutation args ──
 app.get('/api/debug/upload-inputs', async (req, res) => {
   try {
-    const fields = (type) => `
-      ${type}: __type(name: "${type}") {
-        inputFields {
+    // Step 1: get the Mutation type fields to find the actual arg type names
+    const mutResult = await jobberGQL(`{
+      __type(name: "Mutation") {
+        fields {
           name
-          description
-          type { name kind ofType { name kind ofType { name kind } } }
+          args { name type { name kind ofType { name kind ofType { name kind } } } }
         }
       }
-    `;
-    // GraphQL doesn't support aliasing __type multiple times in one query easily,
-    // so run them sequentially
-    const [inv, jobNote, suppInv] = await Promise.all([
-      jobberGQL(`{ __type(name: "SupplierInvoiceUploadInput") { inputFields { name description type { name kind ofType { name kind } } } } }`),
-      jobberGQL(`{ __type(name: "JobNoteAddAttachmentInput") { inputFields { name description type { name kind ofType { name kind } } } } }`),
-      jobberGQL(`{ __type(name: "ClientNoteAddAttachmentInput") { inputFields { name description type { name kind ofType { name kind } } } } }`)
-    ]);
-    res.json({
-      SupplierInvoiceUploadInput: inv.data?.__type?.inputFields,
-      JobNoteAddAttachmentInput: jobNote.data?.__type?.inputFields,
-      ClientNoteAddAttachmentInput: suppInv.data?.__type?.inputFields
-    });
+    }`);
+
+    const allFields = mutResult.data?.__type?.fields || [];
+    const targets = ['supplierInvoiceUpload', 'jobNoteAddAttachment', 'clientNoteAddAttachment'];
+    const relevant = allFields.filter(f => targets.includes(f.name));
+
+    // Step 2: extract input type names from args (unwrap NON_NULL wrappers)
+    const inputTypeNames = new Set();
+    for (const field of relevant) {
+      for (const arg of field.args || []) {
+        let t = arg.type;
+        while (t?.ofType) t = t.ofType;
+        if (t?.name) inputTypeNames.add(t.name);
+      }
+    }
+
+    // Step 3: introspect each discovered input type
+    const schemas = {};
+    await Promise.all([...inputTypeNames].map(async (name) => {
+      const r = await jobberGQL(`{ __type(name: "${name}") { inputFields { name description type { name kind ofType { name kind } } } } }`);
+      schemas[name] = r.data?.__type?.inputFields || null;
+    }));
+
+    res.json({ mutationSignatures: relevant, inputTypeNames: [...inputTypeNames], schemas });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
