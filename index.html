@@ -311,37 +311,14 @@ async function postToJobber() {
     const date = document.getElementById('f-date')?.value || state.receipt.date;
     const total = state.receipt.total;
 
-    // DEBUG: log what state.receipt holds before attachment
-    console.log('[DEBUG postToJobber] imageDataUrl type:', typeof state.receipt.imageDataUrl, '| length:', state.receipt.imageDataUrl?.length);
-    console.log('[DEBUG postToJobber] pdfDataUrl type:', typeof state.receipt.pdfDataUrl, '| length:', state.receipt.pdfDataUrl?.length);
-    console.log('[DEBUG postToJobber] isPdf:', state.receipt.isPdf);
-
-    // Prepare receipt file for Jobber attachment
-    let receiptBase64 = null, receiptMime = null;
-    if (state.receipt.imageDataUrl) {
-        // Image: compress to ~100KB JPEG to stay well under Vercel's 4.5MB limit
-        try {
-            const compressed = await compressReceiptImage(state.receipt.imageDataUrl, 900, 0.70);
-            const match = compressed.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) { receiptMime = match[1]; receiptBase64 = match[2]; }
-        } catch (e) {
-            console.warn('Image compression failed:', e.message);
-        }
-    } else if (state.receipt.pdfDataUrl) {
-        // PDF: send as-is (already stored during extraction, capped at 3MB server-side)
-        const match = state.receipt.pdfDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) { receiptMime = match[1]; receiptBase64 = match[2]; }
-    }
-
-    // DEBUG: log what we're sending to /api/create-expense
-    console.log('[DEBUG postToJobber] receiptMime:', receiptMime, '| receiptBase64 type:', typeof receiptBase64, '| length:', receiptBase64?.length);
-    console.log('[DEBUG postToJobber] receiptBase64 sample:', receiptBase64?.substring(0, 60));
+    // Receipt was already uploaded to Vercel Blob during extraction — just pass the URL.
+    const receiptBlobUrl = state.receipt.receiptBlobUrl || null;
 
     try {
         const res = await fetch(API_BASE + '/api/create-expense', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime })
+            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBlobUrl })
         });
         const rawText = await res.text();
         let data;

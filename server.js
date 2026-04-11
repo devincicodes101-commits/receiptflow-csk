@@ -186,15 +186,31 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       jobStatus = 'found';
     }
 
-    // Build preview and store file data for later Jobber attachment
+    // Image preview data URL (kept small — only for images, shown on review page)
     const imageDataUrl = mimeType !== 'application/pdf'
       ? `data:${mimeType};base64,${fileBuffer.toString('base64')}`
       : null;
 
-    // Store PDF base64 for Jobber attachment (only if small enough to POST back later)
-    const pdfDataUrl = mimeType === 'application/pdf' && fileBuffer.length < 3 * 1024 * 1024
-      ? `data:application/pdf;base64,${fileBuffer.toString('base64')}`
-      : null;
+    // Upload file to Vercel Blob now, while it's already on the server.
+    // Store just the public URL — avoids sending the whole file back to the browser
+    // and then back again to /api/create-expense (which causes Payload Too Large for PDFs).
+    let receiptBlobUrl = null;
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const ext = mimeType === 'application/pdf' ? 'pdf' : (mimeType.split('/')[1] || 'jpg');
+        const safeName = (extracted.invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_');
+        const blob = await blobPut(`receipts/${safeName}_${Date.now()}.${ext}`, fileBuffer, {
+          access: 'public',
+          contentType: mimeType,
+          token: process.env.BLOB_READ_WRITE_TOKEN
+        });
+        receiptBlobUrl = blob.url;
+        console.log('[extract] uploaded to Vercel Blob:', receiptBlobUrl);
+      } catch (blobErr) {
+        console.error('[extract] Blob upload failed:', blobErr.message);
+        // Non-fatal — extraction still succeeds, receipt just won't attach to Jobber
+      }
+    }
 
     res.json({
       success: true,
@@ -203,7 +219,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         jobNo,
         jobStatus,
         imageDataUrl,
-        pdfDataUrl,
+        receiptBlobUrl,
         isPdf: mimeType === 'application/pdf'
       }
     });
@@ -557,7 +573,7 @@ app.get('/api/debug/jobber/:jobNo', async (req, res) => {
 // ── Create Jobber expense ──
 app.post('/api/create-expense', async (req, res) => {
   try {
-    const { vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime } = req.body;
+    const { vendor, invoiceNo, date, total, jobNo, receiptBlobUrl } = req.body;
 
     if (!jobNo) {
       return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
@@ -594,37 +610,9 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
-    // Upload receipt to Vercel Blob → pass public URL to Jobber as receiptUrl.
-    // (Jobber's ActiveStorage /rails/active_storage/direct_uploads is blocked by Cloudflare
-    //  for server-to-server requests, so receiptSignedBlobId is not reachable.)
-    let receiptUrl = null;
-    let receiptNote = receiptBase64 ? null : null;
-
-    if (receiptBase64 && receiptMime) {
-      try {
-        if (!process.env.BLOB_READ_WRITE_TOKEN) {
-          receiptNote = 'no blob token';
-        } else {
-          const buffer = Buffer.from(receiptBase64, 'base64');
-          const ext = receiptMime === 'application/pdf' ? 'pdf' : (receiptMime.split('/')[1] || 'jpg');
-          const safeName = (invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_');
-          const blobPath = `receipts/${safeName}_${Date.now()}.${ext}`;
-
-          const blob = await blobPut(blobPath, buffer, {
-            access: 'public',
-            contentType: receiptMime,
-            token: process.env.BLOB_READ_WRITE_TOKEN
-          });
-
-          receiptUrl = blob.url;
-          receiptNote = 'attached';
-          console.log('[receipt] uploaded to Vercel Blob:', receiptUrl);
-        }
-      } catch (blobErr) {
-        receiptNote = `blob error: ${blobErr.message}`;
-        console.error('[receipt] Vercel Blob upload failed:', blobErr.message);
-      }
-    }
+    // Receipt was already uploaded to Vercel Blob during /api/extract.
+    // Just use the URL that was passed in — no re-upload needed.
+    const receiptNote = receiptBlobUrl ? 'attached' : null;
 
     // Create expense on that job
     const expInput = {
@@ -634,7 +622,7 @@ app.post('/api/create-expense', async (req, res) => {
       total: parseFloat(total) || 0,
       date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
     };
-    if (receiptUrl) expInput.receiptUrl = receiptUrl;
+    if (receiptBlobUrl) expInput.receiptUrl = receiptBlobUrl;
 
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
