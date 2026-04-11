@@ -534,9 +534,10 @@ app.post('/api/create-expense', async (req, res) => {
           const blobData = JSON.parse(initText);
           const { signed_id, direct_upload } = blobData;
           if (direct_upload?.url && signed_id) {
+            console.log('ActiveStorage PUT headers:', JSON.stringify(direct_upload.headers));
             const putRes = await fetch(direct_upload.url, {
               method: 'PUT',
-              headers: { ...direct_upload.headers, 'Content-Type': receiptMime },
+              headers: direct_upload.headers,  // use Jobber's headers exactly — S3 signature covers them
               body: buffer
             });
             console.log('ActiveStorage PUT:', putRes.status);
