@@ -321,6 +321,23 @@ app.get('/api/auth/status', async (req, res) => {
   }
 });
 
+// ── Debug: see raw Jobber job lookup response ──
+app.get('/api/debug/jobber/:jobNo', async (req, res) => {
+  try {
+    const num = parseInt(req.params.jobNo);
+    const result = await jobberGQL(`
+      query {
+        jobs(filter: { jobNumber: ${num} }) {
+          nodes { id jobNumber title }
+        }
+      }
+    `);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Create Jobber expense ──
 app.post('/api/create-expense', async (req, res) => {
   try {
@@ -330,18 +347,25 @@ app.post('/api/create-expense', async (req, res) => {
       return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
     }
 
+    const num = parseInt(jobNo);
+
     // Find job by job number
     const jobResult = await jobberGQL(`
-      query FindJob($num: Int!) {
-        jobs(filter: { number: $num }) {
+      query {
+        jobs(filter: { jobNumber: ${num} }) {
           nodes { id jobNumber title }
         }
       }
-    `, { num: parseInt(jobNo) });
+    `);
+
+    console.log('Jobber job lookup response:', JSON.stringify(jobResult));
 
     const job = jobResult.data?.jobs?.nodes?.[0];
     if (!job) {
-      return res.status(404).json({ error: `Job #${jobNo} not found in Jobber. Check the job number and try again.` });
+      return res.status(404).json({
+        error: `Job #${jobNo} not found in Jobber. Check the job number and try again.`,
+        debug: jobResult
+      });
     }
 
     // Create expense on that job
@@ -360,6 +384,8 @@ app.post('/api/create-expense', async (req, res) => {
         date: date || new Date().toISOString().split('T')[0]
       }
     });
+
+    console.log('Jobber expense create response:', JSON.stringify(expResult));
 
     const errors = expResult.data?.expenseCreate?.userErrors;
     if (errors?.length) return res.status(400).json({ error: errors[0].message });
