@@ -416,16 +416,17 @@ app.post('/api/create-expense', async (req, res) => {
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
         expenseCreate(input: $input) {
-          expense { id description total }
+          expense { id title total }
           userErrors { message path }
         }
       }
     `, {
       input: {
-        jobId: job.id,
-        description: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
+        linkedJobId: job.id,
+        title: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
+        description: invoiceNo ? `Invoice #${invoiceNo}` : undefined,
         total: parseFloat(total) || 0,
-        date: date || new Date().toISOString().split('T')[0]
+        date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
       }
     });
 
