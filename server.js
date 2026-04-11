@@ -180,9 +180,14 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       jobStatus = 'found';
     }
 
-    // Build preview — PDFs don't have a visual preview
+    // Build preview and store file data for later Jobber attachment
     const imageDataUrl = mimeType !== 'application/pdf'
       ? `data:${mimeType};base64,${fileBuffer.toString('base64')}`
+      : null;
+
+    // Store PDF base64 for Jobber attachment (only if small enough to POST back later)
+    const pdfDataUrl = mimeType === 'application/pdf' && fileBuffer.length < 3 * 1024 * 1024
+      ? `data:application/pdf;base64,${fileBuffer.toString('base64')}`
       : null;
 
     res.json({
@@ -192,6 +197,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         jobNo,
         jobStatus,
         imageDataUrl,
+        pdfDataUrl,
         isPdf: mimeType === 'application/pdf'
       }
     });
@@ -534,11 +540,17 @@ app.post('/api/create-expense', async (req, res) => {
           const blobData = JSON.parse(initText);
           const { signed_id, direct_upload } = blobData;
           if (direct_upload?.url && signed_id) {
-            console.log('ActiveStorage PUT headers:', JSON.stringify(direct_upload.headers));
+            // Content-Length is required — S3 presigned URLs reject chunked transfer encoding
+            const putHeaders = {
+              ...direct_upload.headers,
+              'Content-Length': String(buffer.length)
+            };
+            console.log('ActiveStorage PUT headers:', JSON.stringify(putHeaders));
             const putRes = await fetch(direct_upload.url, {
               method: 'PUT',
-              headers: direct_upload.headers,  // use Jobber's headers exactly — S3 signature covers them
-              body: buffer
+              headers: putHeaders,
+              body: buffer,
+              duplex: 'half'  // required in Node 18+ when setting Content-Length manually
             });
             const putBody = await putRes.text();
             console.log('ActiveStorage PUT:', putRes.status, putBody.substring(0, 300));
