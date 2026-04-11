@@ -5,6 +5,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const OpenAI = require('openai');
+const { put: blobPut } = require('@vercel/blob');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -410,36 +411,6 @@ app.get('/api/debug/expense-schema', async (req, res) => {
   }
 });
 
-// ── Get Jobber presigned upload URL (frontend uploads directly, bypassing Vercel payload limit) ──
-app.post('/api/get-upload-url', async (req, res) => {
-  try {
-    const { filename, byteSize, checksum, contentType } = req.body;
-    const result = await jobberGQL(`
-      mutation DirectUploadCreate($input: DirectUploadCreateInput!) {
-        directUploadCreate(input: $input) {
-          directUpload { url headers signedBlobId }
-          userErrors { message }
-        }
-      }
-    `, { input: { filename, byteSize, checksum, contentType } });
-
-    const du = result.data?.directUploadCreate?.directUpload;
-    if (!du?.url) {
-      return res.status(500).json({ error: 'Failed to get upload URL', raw: result });
-    }
-
-    res.json({
-      uploadUrl: du.url,
-      uploadHeaders: typeof du.headers === 'string' ? JSON.parse(du.headers) : (du.headers || {}),
-      signedBlobId: du.signedBlobId
-    });
-  } catch (err) {
-    if (err.message === 'NOT_CONNECTED') {
-      return res.status(401).json({ error: 'Not connected to Jobber.' });
-    }
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ── Debug: see raw Jobber job lookup response ──
 app.get('/api/debug/jobber/:jobNo', async (req, res) => {
@@ -471,7 +442,7 @@ app.get('/api/debug/jobber/:jobNo', async (req, res) => {
 // ── Create Jobber expense ──
 app.post('/api/create-expense', async (req, res) => {
   try {
-    const { vendor, invoiceNo, date, total, jobNo, signedBlobId } = req.body;
+    const { vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime } = req.body;
 
     if (!jobNo) {
       return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
@@ -508,6 +479,24 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
+    // Upload receipt to Vercel Blob (if image provided and token configured)
+    let receiptUrl = null;
+    if (receiptBase64 && receiptMime && process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const buffer = Buffer.from(receiptBase64, 'base64');
+        const ext = receiptMime.split('/')[1] || 'jpg';
+        const blob = await blobPut(
+          `receipts/${Date.now()}-${(invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`,
+          buffer,
+          { access: 'public', contentType: receiptMime, token: process.env.BLOB_READ_WRITE_TOKEN }
+        );
+        receiptUrl = blob.url;
+        console.log('Receipt uploaded to Vercel Blob:', receiptUrl);
+      } catch (blobErr) {
+        console.error('Vercel Blob upload failed (continuing without receipt):', blobErr.message);
+      }
+    }
+
     // Create expense on that job
     const expInput = {
       linkedJobId: job.id,
@@ -516,7 +505,7 @@ app.post('/api/create-expense', async (req, res) => {
       total: parseFloat(total) || 0,
       date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
     };
-    if (signedBlobId) expInput.receiptSignedBlobId = signedBlobId;
+    if (receiptUrl) expInput.receiptUrl = receiptUrl;
 
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
