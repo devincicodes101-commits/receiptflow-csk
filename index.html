@@ -85,6 +85,9 @@
         .btn-ghost { background: transparent; color: #6B7280; padding: 4px 8px; }
         .btn-ghost:hover { color: #374151; background: #F3F4F6; }
         .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .btn-jobber { background: #00A47C; color: #fff; }
+        .btn-jobber:hover { background: #008a67; }
+        .btn-jobber:disabled { opacity: 0.45; cursor: not-allowed; }
 
         .job-input-valid { border-color: #059669 !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.08) !important; }
         .job-input-missing { border-color: #DC2626 !important; box-shadow: 0 0 0 3px rgba(220,38,38,0.08) !important; }
@@ -160,7 +163,10 @@
             <div id="breadcrumb" style="font-size:13px;color:#6B7280;">
                 <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
             </div>
-            <div style="display:flex;align-items:center;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span id="jobber-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
+                    <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Jobber...
+                </span>
                 <span id="api-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
                     <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Checking...
                 </span>
@@ -189,7 +195,7 @@ let state = {
     }
 };
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = '';
 
 /* ── Utils ── */
 const fmt = n => {
@@ -251,6 +257,59 @@ async function checkHealth() {
     } catch {
         el.innerHTML = '<i class="fa-solid fa-circle" style="color:#DC2626;font-size:8px;margin-right:4px;"></i>Server Offline';
         el.style.color = '#DC2626';
+    }
+    checkJobberStatus();
+}
+
+async function checkJobberStatus() {
+    const el = document.getElementById('jobber-status');
+    const settingsEl = document.getElementById('settings-jobber-status');
+    try {
+        const res = await fetch(API_BASE + '/api/auth/status');
+        const data = await res.json();
+        if (data.connected) {
+            if (el) { el.innerHTML = '<i class="fa-solid fa-circle" style="color:#00A47C;font-size:8px;margin-right:4px;"></i>Jobber Connected'; el.style.color = '#00A47C'; }
+            if (settingsEl) settingsEl.innerHTML = '<span style="color:#00A47C;font-weight:600;"><i class="fa-solid fa-check-circle"></i> Connected</span>';
+        } else {
+            if (el) { el.innerHTML = '<i class="fa-solid fa-circle" style="color:#D97706;font-size:8px;margin-right:4px;"></i>Jobber Not Connected'; el.style.color = '#D97706'; }
+            if (settingsEl) settingsEl.innerHTML = '<span style="color:#D97706;">Not connected — click Authorize Jobber below</span>';
+        }
+    } catch {
+        if (el) { el.innerHTML = '<i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Jobber Unknown'; }
+    }
+}
+
+/* ── Post to Jobber ── */
+async function postToJobber() {
+    if (!state.receipt) return;
+    const btn = document.getElementById('btn-jobber');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Posting...'; }
+
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || state.receipt.jobNo;
+    const vendor = document.getElementById('f-vendor')?.value || state.receipt.vendor;
+    const invoiceNo = document.getElementById('f-invoice')?.value || state.receipt.invoiceNo;
+    const date = document.getElementById('f-date')?.value || state.receipt.date;
+    const total = state.receipt.total;
+
+    try {
+        const res = await fetch(API_BASE + '/api/create-expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo })
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to create expense');
+        }
+
+        toast(`Expense posted to Jobber! Job: ${data.jobTitle || jobNo}`, 'success', 5000);
+
+        // Also save to history
+        saveReceipt();
+    } catch (err) {
+        toast('Jobber Error: ' + err.message, 'error', 6000);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-briefcase" style="font-size:12px;"></i> Post to Jobber'; }
     }
 }
 
@@ -512,6 +571,9 @@ function reviewHTML() {
 
                 <!-- Actions -->
                 <div style="display:flex;gap:8px;padding-top:16px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
+                    <button class="btn btn-jobber" id="btn-jobber">
+                        <i class="fa-solid fa-briefcase" style="font-size:12px;"></i> Post to Jobber
+                    </button>
                     <button class="btn btn-primary" id="btn-save">
                         <i class="fa-solid fa-floppy-disk" style="font-size:12px;"></i> Save to History
                     </button>
@@ -671,6 +733,17 @@ function settingsHTML() {
                     <span style="color:#DC2626;font-weight:500;">Flag as error</span>
                 </div>
             </div>
+            <div class="settings-section">
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Jobber Integration</div>
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:10px 12px;align-items:center;font-size:13px;">
+                    <span style="color:#6B7280;">Status</span>
+                    <span id="settings-jobber-status" style="color:#9CA3AF;">Checking...</span>
+                    <span style="color:#6B7280;">Connect</span>
+                    <a href="/api/auth/jobber" class="btn btn-jobber btn-sm" style="text-decoration:none;display:inline-flex;width:fit-content;">
+                        <i class="fa-solid fa-link" style="font-size:11px;"></i> Authorize Jobber
+                    </a>
+                </div>
+            </div>
             <div>
                 <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">About</div>
                 <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;font-size:13px;">
@@ -711,6 +784,8 @@ function bind() {
     }
 
     // Review actions
+    const bJobber = document.getElementById('btn-jobber');
+    if (bJobber) bJobber.addEventListener('click', postToJobber);
     const bSave = document.getElementById('btn-save');
     if (bSave) bSave.addEventListener('click', saveReceipt);
     const bFlag = document.getElementById('btn-flag');

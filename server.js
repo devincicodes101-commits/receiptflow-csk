@@ -205,6 +205,175 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', model: 'gpt-4o' });
 });
 
+// ── Upstash Redis helpers (no extra package — pure fetch) ──
+async function redisGet(key) {
+  if (!process.env.UPSTASH_REDIS_REST_URL) return null;
+  const r = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}/get/${key}`, {
+    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` }
+  });
+  const data = await r.json();
+  return data.result || null;
+}
+
+async function redisSet(key, value, exSeconds) {
+  if (!process.env.UPSTASH_REDIS_REST_URL) return;
+  let url = `${process.env.UPSTASH_REDIS_REST_URL}/set/${key}/${encodeURIComponent(value)}`;
+  if (exSeconds) url += `/ex/${exSeconds}`;
+  await fetch(url, {
+    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` }
+  });
+}
+
+// ── Jobber token management ──
+async function getJobberToken() {
+  let token = await redisGet('jobber_access_token');
+  if (token) return token;
+
+  const refreshToken = await redisGet('jobber_refresh_token');
+  if (!refreshToken) throw new Error('NOT_CONNECTED');
+
+  const res = await fetch('https://api.getjobber.com/api/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.JOBBER_CLIENT_ID,
+      client_secret: process.env.JOBBER_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token'
+    })
+  });
+  const tokens = await res.json();
+  if (!tokens.access_token) throw new Error('TOKEN_REFRESH_FAILED');
+
+  await redisSet('jobber_access_token', tokens.access_token, 82800); // 23h TTL
+  if (tokens.refresh_token) await redisSet('jobber_refresh_token', tokens.refresh_token);
+  return tokens.access_token;
+}
+
+// ── Jobber GraphQL helper ──
+async function jobberGQL(query, variables = {}) {
+  const token = await getJobberToken();
+  const res = await fetch('https://api.getjobber.com/api/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'X-JOBBER-GRAPHQL-VERSION': '2024-04-03'
+    },
+    body: JSON.stringify({ query, variables })
+  });
+  return res.json();
+}
+
+// ── Jobber auth routes ──
+app.get('/api/auth/jobber', (req, res) => {
+  const appUrl = process.env.APP_URL;
+  if (!appUrl) return res.status(500).send('APP_URL environment variable not set');
+  const url = new URL('https://api.getjobber.com/api/oauth/authorize');
+  url.searchParams.set('client_id', process.env.JOBBER_CLIENT_ID);
+  url.searchParams.set('redirect_uri', `${appUrl}/api/auth/callback`);
+  url.searchParams.set('response_type', 'code');
+  res.redirect(url.toString());
+});
+
+app.get('/api/auth/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.status(400).send('Missing authorization code');
+  try {
+    const tokenRes = await fetch('https://api.getjobber.com/api/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.JOBBER_CLIENT_ID,
+        client_secret: process.env.JOBBER_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: `${process.env.APP_URL}/api/auth/callback`
+      })
+    });
+    const tokens = await tokenRes.json();
+    if (!tokens.access_token) {
+      return res.status(400).send('Failed to get token: ' + JSON.stringify(tokens));
+    }
+    await redisSet('jobber_access_token', tokens.access_token, 82800);
+    await redisSet('jobber_refresh_token', tokens.refresh_token);
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Connected!</title></head>
+      <body style="font-family:system-ui;text-align:center;padding:60px;background:#F7F8FA;">
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:40px;max-width:400px;margin:0 auto;">
+          <div style="color:#059669;font-size:48px;margin-bottom:16px;">&#10003;</div>
+          <h2 style="margin:0 0 8px;color:#111827;">Connected to Jobber!</h2>
+          <p style="color:#6B7280;margin:0 0 24px;">ReceiptFlow can now create expenses in your Jobber account.</p>
+          <a href="/" style="background:#B8620A;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;">Return to ReceiptFlow</a>
+        </div>
+      </body></html>`);
+  } catch (err) {
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
+app.get('/api/auth/status', async (req, res) => {
+  try {
+    const token = await redisGet('jobber_access_token');
+    const refresh = await redisGet('jobber_refresh_token');
+    res.json({ connected: !!(token || refresh) });
+  } catch {
+    res.json({ connected: false });
+  }
+});
+
+// ── Create Jobber expense ──
+app.post('/api/create-expense', async (req, res) => {
+  try {
+    const { vendor, invoiceNo, date, total, jobNo } = req.body;
+
+    if (!jobNo) {
+      return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
+    }
+
+    // Find job by job number
+    const jobResult = await jobberGQL(`
+      query FindJob($num: Int!) {
+        jobs(filter: { number: $num }) {
+          nodes { id jobNumber title }
+        }
+      }
+    `, { num: parseInt(jobNo) });
+
+    const job = jobResult.data?.jobs?.nodes?.[0];
+    if (!job) {
+      return res.status(404).json({ error: `Job #${jobNo} not found in Jobber. Check the job number and try again.` });
+    }
+
+    // Create expense on that job
+    const expResult = await jobberGQL(`
+      mutation CreateExpense($input: ExpenseCreateInput!) {
+        expenseCreate(input: $input) {
+          expense { id description total }
+          userErrors { message path }
+        }
+      }
+    `, {
+      input: {
+        jobId: job.id,
+        description: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
+        total: parseFloat(total) || 0,
+        date: date || new Date().toISOString().split('T')[0]
+      }
+    });
+
+    const errors = expResult.data?.expenseCreate?.userErrors;
+    if (errors?.length) return res.status(400).json({ error: errors[0].message });
+
+    const expense = expResult.data?.expenseCreate?.expense;
+    res.json({ success: true, expenseId: expense?.id, jobTitle: job.title });
+  } catch (err) {
+    if (err.message === 'NOT_CONNECTED') {
+      return res.status(401).json({ error: 'Not connected to Jobber. Go to Settings to connect.' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Export for Vercel serverless; also listen when run directly
 module.exports = app;
 
