@@ -176,13 +176,16 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       });
     }
 
-    // Derive jobNo from poBox — keep exactly as extracted, don't add prefixes
+    // Derive jobNo from poBox.
+    // Jobber job numbers are always integers — strip any non-numeric suffix
+    // (e.g. "1095-RETURN" → "1095", "1391-CREDIT" → "1391").
     const rawPO = (extracted.poBox || '').toString().trim();
     let jobNo = null;
     let jobStatus = 'missing';
 
     if (rawPO && rawPO.toLowerCase() !== 'null') {
-      jobNo = rawPO;
+      const numericMatch = rawPO.match(/^(\d+)/);
+      jobNo = numericMatch ? numericMatch[1] : rawPO;
       jobStatus = 'found';
     }
 
