@@ -334,22 +334,23 @@ app.get('/api/debug/jobber/:jobNo', async (req, res) => {
   try {
     const num = parseInt(req.params.jobNo);
 
-    // Try filter by jobNumber
-    const byFilter = await jobberGQL(`
-      query { jobs(filter: { jobNumber: ${num} }) { nodes { id jobNumber title } } }
-    `);
+    // Introspect available filter fields
+    const introspection = await jobberGQL(`{
+      __type(name: "JobFilterAttributes") {
+        inputFields { name type { name kind ofType { name kind } } }
+      }
+    }`);
 
-    // Try searchTerm
+    // Search with larger result set
     const bySearch = await jobberGQL(`
-      query { jobs(searchTerm: "${num}") { nodes { id jobNumber title } } }
+      query { jobs(first: 100, searchTerm: "${num}") { nodes { id jobNumber title } } }
     `);
 
-    // Get a few jobs to see total count and field structure
-    const sample = await jobberGQL(`
-      query { jobs(first: 3) { totalCount nodes { id jobNumber title } } }
-    `);
-
-    res.json({ byFilter, bySearch, sample });
+    res.json({
+      availableFilters: introspection.data?.__type?.inputFields?.map(f => f.name),
+      bySearch: bySearch.data?.jobs?.nodes,
+      exactMatch: bySearch.data?.jobs?.nodes?.find(j => j.jobNumber === num) || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -366,10 +367,10 @@ app.post('/api/create-expense', async (req, res) => {
 
     const num = parseInt(jobNo);
 
-    // Find job by searching, then exact-match on jobNumber
+    // Find job by searching (first:100 to avoid missing it), then exact-match on jobNumber
     const jobResult = await jobberGQL(`
       query {
-        jobs(searchTerm: "${num}") {
+        jobs(first: 100, searchTerm: "${num}") {
           nodes { id jobNumber title }
         }
       }
