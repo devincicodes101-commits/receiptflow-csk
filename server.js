@@ -34,23 +34,30 @@ CRITICAL CONTEXT:
 - The vendor's address is the supplier's own address printed on their letterhead/header, NOT the "Sold To" or "Ship To" address.
 
 JOB NUMBER DETECTION (very important):
-- Look for a field called: "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "Purchase Order", "Customer PO", "Our Order No", "Ref", "Reference"
-- The value in that field is the Jobber job number — extract it EXACTLY as printed (e.g. "1408", "J-104625")
-- If you cannot find this field, set poBox to null. DO NOT guess or make up a job number.
+- Look for a field explicitly labelled: "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "Purchase Order", "Customer PO", "Our Order No", "Ref", "Reference", "Job #"
+- Extract the VALUE from THAT field EXACTLY as printed (e.g. "1391-RETURN", "1408", "J-104625")
+- WARNING: Do NOT confuse "CUSTOMER NO" or "Account No" or "Customer #" with the PO number. Those are the vendor's internal account number for CSK Electric — ignore them entirely for job number detection.
+- If the PO field is blank or missing, set poBox to null. DO NOT substitute the customer number.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates or shipped dates.
 - Return in YYYY-MM-DD format.
 
+CREDIT / RETURN INVOICES:
+- If the invoice is marked "RETURN MERCHANDISE", "CREDIT", "CREDIT MEMO", or "DO NOT PAY", it is a credit/return.
+- For credits, all monetary amounts (subtotal, tax, total) must be NEGATIVE numbers (e.g. -807.91).
+- Note this clearly in the "notes" field.
+
 LINE ITEMS:
 - Only list distinct product/service lines. Do not duplicate items.
 - Each line item should have a product code or description, quantity, unit price, and line total.
+- For credit invoices, line item totals should be negative.
 - Fees, taxes, and surcharges can be separate line items.
 
 TOTALS:
-- subtotal = gross total before taxes
-- tax = sum of all taxes (GST, HST, PST, etc.)
-- total = final amount due (the largest total on the invoice)
+- subtotal = gross total before taxes (negative for credits)
+- tax = sum of all taxes — GST, HST, PST, etc. (negative for credits)
+- total = final amount due (negative for credits)
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
@@ -60,6 +67,7 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "date": "YYYY-MM-DD",
   "poBox": "value from YOUR P.O. NO or PO# field exactly as printed, null if not present",
   "poFieldLabel": "the exact label text of the PO field found (e.g. 'YOUR P.O. NO', 'PO #')",
+  "isCredit": true or false,
   "items": [
     {
       "desc": "product code + description",
@@ -72,7 +80,7 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "tax": number,
   "total": number,
   "confidence": "high" | "medium" | "low",
-  "notes": "any observations"
+  "notes": "any observations including if this is a credit/return"
 }
 
 If a field cannot be determined, use null. Never fabricate values.`;
