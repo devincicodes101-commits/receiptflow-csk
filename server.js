@@ -336,6 +336,24 @@ app.get('/api/auth/status', async (req, res) => {
   }
 });
 
+// ── Debug: introspect ExpenseCreateInput fields ──
+app.get('/api/debug/expense-schema', async (req, res) => {
+  try {
+    const result = await jobberGQL(`{
+      __type(name: "ExpenseCreateInput") {
+        inputFields {
+          name
+          description
+          type { name kind ofType { name kind ofType { name kind } } }
+        }
+      }
+    }`);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Debug: see raw Jobber job lookup response ──
 app.get('/api/debug/jobber/:jobNo', async (req, res) => {
   try {
