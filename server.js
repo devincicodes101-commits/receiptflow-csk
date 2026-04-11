@@ -275,7 +275,7 @@ async function jobberGQL(query, variables = {}) {
 
 // ── Jobber auth routes ──
 app.get('/api/auth/jobber', (req, res) => {
-  const appUrl = process.env.APP_URL;
+  const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
   if (!appUrl) return res.status(500).send('APP_URL environment variable not set');
   const url = new URL('https://api.getjobber.com/api/oauth/authorize');
   url.searchParams.set('client_id', process.env.JOBBER_CLIENT_ID);
@@ -296,7 +296,7 @@ app.get('/api/auth/callback', async (req, res) => {
         client_secret: process.env.JOBBER_CLIENT_SECRET,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.APP_URL}/api/auth/callback`
+        redirect_uri: `${(process.env.APP_URL || '').trim().replace(/\/$/, '')}/api/auth/callback`
       })
     });
     const tokens = await tokenRes.json();
