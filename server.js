@@ -4,6 +4,7 @@ const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const OpenAI = require('openai');
 
 const app = express();
@@ -280,6 +281,47 @@ async function jobberGQL(query, variables = {}) {
   return res.json();
 }
 
+// ── Upload receipt image to Jobber's ActiveStorage ──
+async function uploadReceiptToJobber(fileBuffer, mimeType, filename) {
+  const checksum = crypto.createHash('md5').update(fileBuffer).digest('base64');
+
+  const uploadResult = await jobberGQL(`
+    mutation DirectUploadCreate($input: DirectUploadCreateInput!) {
+      directUploadCreate(input: $input) {
+        directUpload { url headers signedBlobId }
+        userErrors { message }
+      }
+    }
+  `, {
+    input: {
+      filename: filename || 'receipt.jpg',
+      byteSize: fileBuffer.length,
+      checksum,
+      contentType: mimeType
+    }
+  });
+
+  const du = uploadResult.data?.directUploadCreate?.directUpload;
+  if (!du?.url) {
+    console.error('directUploadCreate failed:', JSON.stringify(uploadResult));
+    return null; // Non-fatal — expense still gets created without receipt
+  }
+
+  const headers = typeof du.headers === 'string' ? JSON.parse(du.headers) : (du.headers || {});
+  const putRes = await fetch(du.url, {
+    method: 'PUT',
+    headers: { ...headers, 'Content-Type': mimeType },
+    body: fileBuffer
+  });
+
+  if (!putRes.ok) {
+    console.error('Receipt PUT failed:', putRes.status, await putRes.text());
+    return null;
+  }
+
+  return du.signedBlobId;
+}
+
 // ── Jobber auth routes ──
 app.get('/api/auth/jobber', (req, res) => {
   const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
@@ -384,7 +426,7 @@ app.get('/api/debug/jobber/:jobNo', async (req, res) => {
 // ── Create Jobber expense ──
 app.post('/api/create-expense', async (req, res) => {
   try {
-    const { vendor, invoiceNo, date, total, jobNo } = req.body;
+    const { vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime, receiptFilename } = req.body;
 
     if (!jobNo) {
       return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
@@ -412,7 +454,27 @@ app.post('/api/create-expense', async (req, res) => {
       });
     }
 
+    // Upload receipt image to Jobber if provided
+    let signedBlobId = null;
+    if (receiptBase64 && receiptMime) {
+      try {
+        const fileBuffer = Buffer.from(receiptBase64, 'base64');
+        signedBlobId = await uploadReceiptToJobber(fileBuffer, receiptMime, receiptFilename || 'receipt.jpg');
+      } catch (uploadErr) {
+        console.error('Receipt upload failed (continuing without it):', uploadErr.message);
+      }
+    }
+
     // Create expense on that job
+    const expInput = {
+      linkedJobId: job.id,
+      title: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
+      description: invoiceNo ? `Invoice #${invoiceNo}` : undefined,
+      total: parseFloat(total) || 0,
+      date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
+    };
+    if (signedBlobId) expInput.receiptSignedBlobId = signedBlobId;
+
     const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
         expenseCreate(input: $input) {
@@ -420,15 +482,7 @@ app.post('/api/create-expense', async (req, res) => {
           userErrors { message path }
         }
       }
-    `, {
-      input: {
-        linkedJobId: job.id,
-        title: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
-        description: invoiceNo ? `Invoice #${invoiceNo}` : undefined,
-        total: parseFloat(total) || 0,
-        date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
-      }
-    });
+    `, { input: expInput });
 
     console.log('Jobber expense create response:', JSON.stringify(expResult));
 

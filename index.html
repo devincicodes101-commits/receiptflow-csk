@@ -291,11 +291,22 @@ async function postToJobber() {
     const date = document.getElementById('f-date')?.value || state.receipt.date;
     const total = state.receipt.total;
 
+    // Extract base64 image data if available (images only; PDFs have no stored preview)
+    let receiptBase64 = null, receiptMime = null, receiptFilename = null;
+    if (state.receipt.imageDataUrl) {
+        const match = state.receipt.imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+            receiptMime = match[1];
+            receiptBase64 = match[2];
+            receiptFilename = `receipt_${(invoiceNo || 'unknown').replace(/[^a-zA-Z0-9]/g, '_')}.${receiptMime.split('/')[1] || 'jpg'}`;
+        }
+    }
+
     try {
         const res = await fetch(API_BASE + '/api/create-expense', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo })
+            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime, receiptFilename })
         });
         const rawText = await res.text();
         let data;
