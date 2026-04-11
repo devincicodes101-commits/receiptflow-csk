@@ -540,9 +540,10 @@ app.post('/api/create-expense', async (req, res) => {
               headers: direct_upload.headers,  // use Jobber's headers exactly — S3 signature covers them
               body: buffer
             });
-            console.log('ActiveStorage PUT:', putRes.status);
+            const putBody = await putRes.text();
+            console.log('ActiveStorage PUT:', putRes.status, putBody.substring(0, 300));
             if (putRes.ok) { receiptSignedBlobId = signed_id; receiptNote = 'attached'; }
-            else receiptNote = `PUT failed: ${putRes.status}`;
+            else receiptNote = `PUT ${putRes.status}: ${putBody.replace(/<[^>]+>/g,'').trim().substring(0, 100)}`;
           } else {
             receiptNote = `missing signed_id or url in response`;
           }
