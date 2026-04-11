@@ -336,6 +336,22 @@ app.get('/api/auth/status', async (req, res) => {
   }
 });
 
+// ── Debug: find upload-related mutations in Jobber schema ──
+app.get('/api/debug/upload-mutations', async (req, res) => {
+  try {
+    const result = await jobberGQL(`{
+      __type(name: "Mutation") {
+        fields { name }
+      }
+    }`);
+    const all = result.data?.__type?.fields?.map(f => f.name) || [];
+    const upload = all.filter(n => /upload|file|blob|attach|receipt/i.test(n));
+    res.json({ uploadRelated: upload, all });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Debug: introspect ExpenseCreateInput fields ──
 app.get('/api/debug/expense-schema', async (req, res) => {
   try {
@@ -434,12 +450,21 @@ app.post('/api/create-expense', async (req, res) => {
 
     console.log('Jobber job lookup response:', JSON.stringify(jobResult));
 
+    // Detect auth/token errors from GraphQL error payload
+    if (jobResult.errors?.length) {
+      const gqlMsg = jobResult.errors[0].message || '';
+      if (/unauthori|token|auth/i.test(gqlMsg)) {
+        return res.status(401).json({ error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.' });
+      }
+      return res.status(400).json({ error: 'Jobber API error: ' + gqlMsg });
+    }
+
     // Exact match — search can return partial matches
     const job = jobResult.data?.jobs?.nodes?.find(j => j.jobNumber === num);
     if (!job) {
       return res.status(404).json({
         error: `Job #${jobNo} not found in Jobber. Check the job number and try again.`,
-        debug: jobResult
+        debug: { searched: num, returned: jobResult.data?.jobs?.nodes }
       });
     }
 
