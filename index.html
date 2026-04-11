@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ReceiptFlow — CSK Electric</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
@@ -291,14 +292,43 @@ async function postToJobber() {
     const date = document.getElementById('f-date')?.value || state.receipt.date;
     const total = state.receipt.total;
 
-    // Extract base64 image data if available (images only; PDFs have no stored preview)
-    let receiptBase64 = null, receiptMime = null, receiptFilename = null;
-    if (state.receipt.imageDataUrl) {
-        const match = state.receipt.imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
-            receiptMime = match[1];
-            receiptBase64 = match[2];
-            receiptFilename = `receipt_${(invoiceNo || 'unknown').replace(/[^a-zA-Z0-9]/g, '_')}.${receiptMime.split('/')[1] || 'jpg'}`;
+    // Upload receipt image directly from browser → Jobber storage (bypasses Vercel payload limit)
+    let signedBlobId = null;
+    if (state.receipt.imageDataUrl && typeof SparkMD5 !== 'undefined') {
+        try {
+            const match = state.receipt.imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+                const mimeType = match[1];
+                const binaryStr = atob(match[2]);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+                // MD5 checksum (base64) required by Jobber's ActiveStorage
+                const rawMD5 = SparkMD5.ArrayBuffer.hash(bytes.buffer, true);
+                const checksum = btoa(rawMD5);
+                const filename = `receipt_${(invoiceNo || 'unknown').replace(/[^a-zA-Z0-9]/g, '_')}.${mimeType.split('/')[1] || 'jpg'}`;
+
+                // Step 1: get presigned upload URL from our server
+                const urlRes = await fetch(API_BASE + '/api/get-upload-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename, byteSize: bytes.length, checksum, contentType: mimeType })
+                });
+                const urlData = await urlRes.json();
+
+                if (urlData.uploadUrl) {
+                    // Step 2: PUT file directly to Jobber's storage — never touches Vercel
+                    const uploadHeaders = urlData.uploadHeaders || {};
+                    await fetch(urlData.uploadUrl, {
+                        method: 'PUT',
+                        headers: { ...uploadHeaders, 'Content-Type': mimeType },
+                        body: bytes
+                    });
+                    signedBlobId = urlData.signedBlobId;
+                }
+            }
+        } catch (uploadErr) {
+            console.warn('Receipt upload skipped:', uploadErr.message);
         }
     }
 
@@ -306,7 +336,7 @@ async function postToJobber() {
         const res = await fetch(API_BASE + '/api/create-expense', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBase64, receiptMime, receiptFilename })
+            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, signedBlobId })
         });
         const rawText = await res.text();
         let data;
