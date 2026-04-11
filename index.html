@@ -294,41 +294,52 @@ async function postToJobber() {
 
     // Upload receipt image directly from browser → Jobber storage (bypasses Vercel payload limit)
     let signedBlobId = null;
-    if (state.receipt.imageDataUrl && typeof SparkMD5 !== 'undefined') {
-        try {
-            const match = state.receipt.imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-                const mimeType = match[1];
-                const binaryStr = atob(match[2]);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    if (state.receipt.imageDataUrl) {
+        if (typeof SparkMD5 === 'undefined') {
+            toast('Warning: SparkMD5 not loaded — receipt image will not be attached', 'error', 4000);
+        } else {
+            try {
+                const match = state.receipt.imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+                if (match) {
+                    const mimeType = match[1];
+                    const binaryStr = atob(match[2]);
+                    const bytes = new Uint8Array(binaryStr.length);
+                    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
 
-                // MD5 checksum (base64) required by Jobber's ActiveStorage
-                const rawMD5 = SparkMD5.ArrayBuffer.hash(bytes.buffer, true);
-                const checksum = btoa(rawMD5);
-                const filename = `receipt_${(invoiceNo || 'unknown').replace(/[^a-zA-Z0-9]/g, '_')}.${mimeType.split('/')[1] || 'jpg'}`;
+                    // MD5 checksum (base64) required by Jobber's ActiveStorage
+                    const rawMD5 = SparkMD5.ArrayBuffer.hash(bytes.buffer, true);
+                    const checksum = btoa(rawMD5);
+                    const filename = `receipt_${(invoiceNo || 'unknown').replace(/[^a-zA-Z0-9]/g, '_')}.${mimeType.split('/')[1] || 'jpg'}`;
 
-                // Step 1: get presigned upload URL from our server
-                const urlRes = await fetch(API_BASE + '/api/get-upload-url', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename, byteSize: bytes.length, checksum, contentType: mimeType })
-                });
-                const urlData = await urlRes.json();
-
-                if (urlData.uploadUrl) {
-                    // Step 2: PUT file directly to Jobber's storage — never touches Vercel
-                    const uploadHeaders = urlData.uploadHeaders || {};
-                    await fetch(urlData.uploadUrl, {
-                        method: 'PUT',
-                        headers: { ...uploadHeaders, 'Content-Type': mimeType },
-                        body: bytes
+                    // Step 1: get presigned upload URL from our server
+                    const urlRes = await fetch(API_BASE + '/api/get-upload-url', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename, byteSize: bytes.length, checksum, contentType: mimeType })
                     });
-                    signedBlobId = urlData.signedBlobId;
+                    const urlData = await urlRes.json();
+
+                    if (!urlData.uploadUrl) {
+                        toast('Receipt upload skipped: ' + (urlData.error || 'no upload URL from Jobber'), 'error', 5000);
+                    } else {
+                        // Step 2: PUT file directly to Jobber's storage — never touches Vercel
+                        const uploadHeaders = urlData.uploadHeaders || {};
+                        const putRes = await fetch(urlData.uploadUrl, {
+                            method: 'PUT',
+                            headers: { ...uploadHeaders, 'Content-Type': mimeType },
+                            body: bytes
+                        });
+                        if (!putRes.ok) {
+                            const putErr = await putRes.text();
+                            toast(`Receipt upload failed (${putRes.status}): ${putErr.substring(0, 120)}`, 'error', 6000);
+                        } else {
+                            signedBlobId = urlData.signedBlobId;
+                        }
+                    }
                 }
+            } catch (uploadErr) {
+                toast('Receipt upload error: ' + uploadErr.message, 'error', 5000);
             }
-        } catch (uploadErr) {
-            console.warn('Receipt upload skipped:', uploadErr.message);
         }
     }
 
