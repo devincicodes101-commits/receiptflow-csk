@@ -17,7 +17,7 @@ app.use(cookieParser(process.env.SESSION_SECRET || 'fallback-secret-change-me'))
 
 // ── Auth middleware — protects all /api routes except login + check ──
 app.use((req, res, next) => {
-  const open = ['/api/login', '/api/auth/check'];
+  const open = ['/api/login', '/api/auth/check', '/api/auth/callback', '/api/auth/jobber'];
   if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
   const session = req.signedCookies?.rf_session;
   if (session) return next();
