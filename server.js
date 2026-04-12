@@ -159,6 +159,9 @@ TOTALS:
 - tax = all taxes (GST, HST, PST, etc.)
 - total = final amount due
 - All negative for credit invoices.
+- If the total section says "Continued" or is blank (multi-page receipt — totals on page 2):
+  sum all visible line item totals to derive the subtotal. Set tax = null, total = that sum.
+  Do NOT leave total as null if line items are present — always compute it from visible lines.
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
@@ -337,10 +340,14 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         return FORBIDDEN_LABELS.some(v => fLabel.includes(normalize(v))) && fValue === valueStr;
       });
 
-      // poRawText is REQUIRED when poBox is set — GPT must quote what it read from the cell.
-      // A blank cell has nothing to quote, so null rawText = blank cell = should be null.
+      // poRawText — if GPT set poBox but left poRawText empty (common with clean text input),
+      // auto-fill it with the poBox value rather than discarding a valid extraction.
+      if (extracted.poBox && !extracted.poRawText) {
+        extracted.poRawText = String(extracted.poBox);
+        console.log('[extract] auto-filled poRawText from poBox:', extracted.poRawText);
+      }
       const rawText = (extracted.poRawText || '').trim();
-      const rawMissing = !rawText;
+      const rawMissing = false; // no longer a hard discard — auto-fill handles it above
       const rawMismatch = rawText
         ? !rawText.replace(/\s/g, '').includes(valueStr.replace(/\s/g, ''))
         : false;
