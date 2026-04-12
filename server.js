@@ -270,18 +270,22 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       const digitsOnly = valueStr.replace(/[^0-9]/g, '');
       const tooLong = digitsOnly.length > 5;
 
-      // GPT must have explicitly confirmed it saw both the label and a non-empty value
-      const notExplicit = extracted.poFoundExplicitly !== true;
+      // GPT must have explicitly confirmed it saw both the label and a non-empty value.
+      // Accept boolean true OR string "true" (GPT occasionally serialises booleans as strings).
+      const notExplicit = !extracted.poFoundExplicitly;
 
-      // poRawText must exist and must contain the stated poBox value
+      // If GPT provided poRawText AND it does not contain the stated value → contradiction → discard.
+      // But if poRawText is absent, we trust poFoundExplicitly alone (don't penalise omission).
       const rawText = (extracted.poRawText || '').trim();
-      const rawMissing = !rawText || !rawText.includes(valueStr);
+      const rawMismatch = rawText
+        ? !rawText.replace(/\s/g, '').includes(valueStr.replace(/\s/g, ''))
+        : false;
 
-      if (!labelOk || valueForbidden || tooLong || notExplicit || rawMissing) {
+      if (!labelOk || valueForbidden || tooLong || notExplicit || rawMismatch) {
         console.log(
           `[extract] Discarding poBox "${extracted.poBox}" — ` +
           `labelOk:${labelOk} forbidden:${valueForbidden} tooLong:${tooLong} ` +
-          `notExplicit:${notExplicit} rawMissing:${rawMissing} rawText:"${rawText}"`
+          `notExplicit:${notExplicit} rawMismatch:${rawMismatch} rawText:"${rawText}"`
         );
         extracted.poBox = null;
         extracted.poFieldLabel = null;
@@ -735,14 +739,23 @@ app.post('/api/create-expense', async (req, res) => {
     // Just use the URL that was passed in — no re-upload needed.
     const receiptNote = receiptBlobUrl ? 'attached' : null;
 
+    // Build expense title from whatever fields are present — no hardcoded placeholders.
+    const titleParts = [vendor, invoiceNo ? `Invoice #${invoiceNo}` : null].filter(Boolean);
+    const expenseTitle = titleParts.length ? titleParts.join(' — ') : 'Expense';
+
+    // Parse total: use actual value; only fall back to 0 if Jobber's required field would be absent.
+    const parsedTotal = parseFloat(total);
+    const expenseTotal = isNaN(parsedTotal) ? 0 : parsedTotal;
+
     // Create expense on that job
     const expInput = {
       linkedJobId: job.id,
-      title: `${vendor || 'Unknown Vendor'} — Invoice #${invoiceNo || 'N/A'}`,
-      description: invoiceNo ? `Invoice #${invoiceNo}` : undefined,
-      total: parseFloat(total) || 0,
+      title: expenseTitle,
+      total: expenseTotal,
       date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
     };
+    // Only include description if we actually have an invoice number
+    if (invoiceNo) expInput.description = `Invoice #${invoiceNo}`;
     if (receiptBlobUrl) expInput.receiptUrl = receiptBlobUrl;
 
     const expResult = await jobberGQL(`
