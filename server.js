@@ -86,36 +86,44 @@ CRITICAL CONTEXT:
 ════════════════════════════════════════
 JOB NUMBER RULE — READ THIS CAREFULLY
 ════════════════════════════════════════
-The job number (poBox) must satisfy ALL three conditions:
-  1. It comes from a field whose printed label is one of:
+The job number (poBox) must satisfy ALL of these conditions:
+  1. There is a field whose printed label is EXACTLY one of:
        "YOUR P.O. NO", "YOUR P.O.NO", "P.O. NO", "PO NO", "PO #", "P.O. #",
        "Purchase Order", "Customer PO", "Job #", "Job No"
   2. The cell/box next to that label contains an actual printed value — not blank, not empty, not just spaces or dashes.
   3. The value is a short number, typically 3–5 digits (e.g. 1178, 1249, 1095).
+  4. You can quote the exact text you read from that cell in poRawText.
 
-IF THE CELL IS BLANK: even if the label exists, set poBox to null.
-  Example: if you see "YOUR P.O. NO" as a column header but the cell below or beside it is empty → null.
-  Do NOT fill it with a nearby number. Do NOT guess what it might be.
+IF THE LABEL DOESN'T EXIST ON THE DOCUMENT: poBox must be null. Do NOT invent a label that isn't printed.
+IF THE CELL IS BLANK: even if the label exists, poBox must be null. Do NOT fill it with a nearby number.
 
 NEVER use these as a job number (always null):
   ✗ CUSTOMER NO / Account No (e.g. 104625)
-  ✗ ORDER NO / Order ID (e.g. 17798703-00) — these are long numbers with 6+ digits or dashes
+  ✗ ORDER NO / Order ID (e.g. 17798703-00) — long numbers, 6+ digits, or contain dashes
   ✗ INVOICE NO / Document No / Transaction No
   ✗ WAYBILL NO / Tracking No
   ✗ Numbers in the REFERENCE column of the line-item table
   ✗ Any number longer than 5 digits
-  ✗ Any number you are inferring, guessing, or unsure about
+  ✗ Any number you are inferring, guessing, or are unsure about
 
-SELF-CHECK before returning poBox: Ask yourself — "Did I physically see a non-empty value printed in the PO cell?" If the answer is anything other than a definitive yes, return null.
+SELF-CHECK before returning poBox:
+  Ask yourself two questions:
+  (a) "Does the label text physically appear printed on this document?" — if NO → poBox: null
+  (b) "Is there a non-empty value printed in the cell next to that label?" — if NO → poBox: null
+  Only if BOTH answers are YES: set poBox to the value and poFoundExplicitly to true.
+  Otherwise: poBox: null, poFoundExplicitly: false.
 
-GESCAN / SONEPAR DOCUMENTS (invoices AND packing slips):
-Top-right header contains a box with two columns:
+GESCAN / SONEPAR INVOICES (have two-column header box):
   | CUSTOMER NO  | YOUR P.O. NO |
   |    104625    |    1178      |
-- Left cell "CUSTOMER NO" = always 104625 = CSK Electric's Gescan account. NEVER a job number.
-- Right cell "YOUR P.O. NO" = job number ONLY if it contains a printed value (e.g. 1178).
-- If the right cell is blank, empty, or missing → poBox must be null, no exceptions.
-- This box appears on both Gescan invoices and packing slips / counter sales.
+  - Left cell = CUSTOMER NO (always 104625) = CSK Electric's account. NEVER a job number.
+  - Right cell = YOUR P.O. NO = job number ONLY if it has a printed value.
+  - If right cell is blank → poBox: null.
+
+GESCAN COUNTER SALE / PACKING SLIP documents:
+  - These often show only CUSTOMER NO and ORDER NO in the header — NO "YOUR P.O. NO" column at all.
+  - If you do NOT see a "YOUR P.O. NO" column header printed on the document → poBox: null.
+  - ORDER NO (e.g. 17798703-00) is NOT a job number. CUSTOMER NO (e.g. 104625) is NOT a job number.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates, ship dates.
@@ -144,7 +152,9 @@ Return ONLY valid JSON, no markdown, no explanation:
   "invoiceNo": "invoice or document number",
   "date": "YYYY-MM-DD",
   "poBox": "value from a ✓-labelled PO field exactly as printed, or null",
-  "poFieldLabel": "the exact label text you saw on the document, or null if poBox is null",
+  "poFieldLabel": "the exact label text as printed on the document, or null if poBox is null",
+  "poRawText": "the exact text you read from the PO cell (quoted verbatim), or null if poBox is null",
+  "poFoundExplicitly": true or false (true ONLY if you physically saw both the label AND a non-empty value),
   "isCredit": true or false,
   "items": [
     { "desc": "product code + description", "qty": number or null, "unit": unit price or null, "total": line total }
@@ -179,6 +189,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       const base64Pdf = fileBuffer.toString('base64');
       const response = await openai.responses.create({
         model: 'gpt-4o',
+        temperature: 0,
         input: [
           {
             role: 'user',
@@ -243,8 +254,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       });
     }
 
-    // ── Server-side PO label validation (second line of defence against hallucination) ──
-    // If GPT returned a poBox but the label it cited isn't in our approved list, discard it.
+    // ── Server-side PO validation — multiple layers against hallucination ──
     const VALID_PO_LABELS = [
       'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PONO',
       'PO #', 'PO#', 'P.O. #', 'P.O.#', 'PURCHASE ORDER', 'CUSTOMER PO',
@@ -257,15 +267,26 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(v));
       const valueStr = String(extracted.poBox).trim();
       const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
-
-      // Job numbers are short (≤5 digits). Anything longer is an order/invoice/account number.
       const digitsOnly = valueStr.replace(/[^0-9]/g, '');
       const tooLong = digitsOnly.length > 5;
 
-      if (!labelOk || valueForbidden || tooLong) {
-        console.log(`[extract] Discarding poBox "${extracted.poBox}" — labelOk:${labelOk} forbidden:${valueForbidden} tooLong:${tooLong}`);
+      // GPT must have explicitly confirmed it saw both the label and a non-empty value
+      const notExplicit = extracted.poFoundExplicitly !== true;
+
+      // poRawText must exist and must contain the stated poBox value
+      const rawText = (extracted.poRawText || '').trim();
+      const rawMissing = !rawText || !rawText.includes(valueStr);
+
+      if (!labelOk || valueForbidden || tooLong || notExplicit || rawMissing) {
+        console.log(
+          `[extract] Discarding poBox "${extracted.poBox}" — ` +
+          `labelOk:${labelOk} forbidden:${valueForbidden} tooLong:${tooLong} ` +
+          `notExplicit:${notExplicit} rawMissing:${rawMissing} rawText:"${rawText}"`
+        );
         extracted.poBox = null;
         extracted.poFieldLabel = null;
+        extracted.poRawText = null;
+        extracted.poFoundExplicitly = false;
       }
     }
 
