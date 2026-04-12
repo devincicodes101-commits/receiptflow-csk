@@ -176,6 +176,58 @@ Return ONLY valid JSON, no markdown, no explanation:
 
 If a field cannot be determined, use null. Never fabricate values.`;
 
+// ── LlamaParse helper — uploads file, polls until done, returns markdown ──
+async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
+  const LLAMA_KEY = process.env.LLAMA_CLOUD_API_KEY;
+  if (!LLAMA_KEY) throw new Error('LLAMA_CLOUD_API_KEY not set');
+
+  // Upload the file
+  const form = new FormData();
+  const blob = new Blob([fileBuffer], { type: mimeType });
+  form.append('file', blob, filename || 'receipt');
+
+  const uploadRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${LLAMA_KEY}` },
+    body: form
+  });
+
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    throw new Error(`LlamaParse upload failed: ${uploadRes.status} ${err.substring(0, 200)}`);
+  }
+
+  const { id: jobId } = await uploadRes.json();
+  console.log('[llamaparse] job started:', jobId);
+
+  // Poll every 1 second for up to 30 seconds
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+
+    const statusRes = await fetch(
+      `https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}`,
+      { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }
+    );
+    const statusData = await statusRes.json();
+    console.log('[llamaparse] poll', i + 1, '— status:', statusData.status);
+
+    if (statusData.status === 'SUCCESS') {
+      const resultRes = await fetch(
+        `https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`,
+        { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }
+      );
+      const resultData = await resultRes.json();
+      return resultData.markdown || '';
+    }
+
+    if (statusData.status === 'ERROR') {
+      throw new Error(`LlamaParse processing error: ${JSON.stringify(statusData)}`);
+    }
+  }
+
+  throw new Error('LlamaParse timeout — job did not complete in 30 seconds');
+}
+
 app.post('/api/extract', upload.single('receipt'), async (req, res) => {
   try {
     if (!req.file) {
@@ -185,65 +237,31 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     const fileBuffer = req.file.buffer;
     const mimeType = req.file.mimetype;
 
-    // DEBUG: log what the server actually received
-    console.log('[DEBUG extract] mimetype:', mimeType);
-    console.log('[DEBUG extract] originalname:', req.file.originalname);
-    console.log('[DEBUG extract] buffer size:', fileBuffer.length, '| isBuffer:', Buffer.isBuffer(fileBuffer));
+    console.log('[extract] mimetype:', mimeType, '| size:', fileBuffer.length, '| file:', req.file.originalname);
 
-    let rawContent;
+    // ── Step 1: LlamaParse — convert image or PDF to clean markdown text ──
+    // LlamaParse handles tables, grids, and multi-column layouts far better than
+    // raw vision. The Gescan header box (CUSTOMER NO | ORDER NO | YOUR P.O. NO)
+    // comes through as a proper markdown table, making extraction much more reliable.
+    const llamaMarkdown = await parseWithLlamaParse(
+      fileBuffer, mimeType, req.file.originalname || 'receipt'
+    );
+    console.log('[extract] LlamaParse markdown preview:', llamaMarkdown.substring(0, 400));
 
-    if (mimeType === 'application/pdf') {
-      // Send PDF directly to OpenAI Responses API — reads the actual visual content, not garbled text
-      const base64Pdf = fileBuffer.toString('base64');
-      const response = await openai.responses.create({
-        model: 'gpt-4o',
-        temperature: 0,
-        input: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'input_file',
-                filename: req.file.originalname || 'invoice.pdf',
-                file_data: `data:application/pdf;base64,${base64Pdf}`
-              },
-              {
-                type: 'input_text',
-                text: EXTRACTION_PROMPT
-              }
-            ]
-          }
-        ]
-      });
-      rawContent = response.output_text.trim();
-    } else {
-      // Image — use Chat Completions with vision
-      const base64Image = fileBuffer.toString('base64');
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:${mimeType};base64,${base64Image}`,
-                  detail: 'high'
-                }
-              },
-              {
-                type: 'text',
-                text: EXTRACTION_PROMPT
-              }
-            ]
-          }
-        ],
-        max_tokens: 2000,
-        temperature: 0
-      });
-      rawContent = response.choices[0].message.content.trim();
-    }
+    // ── Step 2: GPT-4o text — extract structured JSON from the markdown ──
+    // Text mode is faster, cheaper, and more accurate than vision on clean parsed text.
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: EXTRACTION_PROMPT + '\n\n---\nDocument text (parsed from receipt):\n\n' + llamaMarkdown
+        }
+      ],
+      max_tokens: 2000,
+      temperature: 0
+    });
+    const rawContent = response.choices[0].message.content.trim();
 
     // Strip markdown code fences if present
     let jsonStr = rawContent;
