@@ -89,7 +89,13 @@ JOB NUMBER RULE — READ THIS CAREFULLY
 Set poBox ONLY when ALL of these are true:
   1. A field label matching one of the following is physically printed on the document:
        "YOUR P.O. NO", "YOUR P.O.NO", "P.O. NO", "PO NO", "PO #", "P.O. #",
-       "Purchase Order", "Customer PO", "Job #", "Job No"
+       "Purchase Order", "Customer PO", "Job #", "Job No", "Job Number",
+       "Work Order", "W.O.", "W.O. #", "W/O", "W/O #",
+       "Your Reference", "Your Ref", "Your Ref No", "Your Ref #",
+       "Customer Ref", "Customer Reference", "Cust Ref",
+       "Reference", "Ref No", "Ref #",
+       "Contract No", "Contract #", "Project No", "Project #",
+       "Account Ref", "Acct Ref", "Order Ref"
   2. The cell next to that label has an actual printed value — not blank, not dashes, not empty.
   3. The value is a short number, 3–5 digits (e.g. 1178, 1249, 1095).
 
@@ -113,6 +119,11 @@ GESCAN COUNTER SALE / PACKING SLIP:
   - Header typically shows only CUSTOMER NO and ORDER NO — no "YOUR P.O. NO" column.
   - If "YOUR P.O. NO" is not printed as a column header → poBox: null.
   - ORDER NO and CUSTOMER NO are NEVER job numbers.
+
+IMPORTANT — also populate potentialJobFields:
+List EVERY header/reference field you see on the document (label + value), regardless of whether
+you recognised it as a PO field. Include fields like "YOUR P.O. NO", "ORDER NO", "CUSTOMER NO",
+"WORK ORDER", "REF", "JOB", etc. This helps diagnose missed detections.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates, ship dates.
@@ -143,6 +154,7 @@ Return ONLY valid JSON, no markdown, no explanation:
   "poBox": "value from a matching PO field exactly as printed, or null",
   "poFieldLabel": "the exact label text printed on the document, or null if poBox is null",
   "poRawText": "the exact text you read from the PO value cell (verbatim), or null if poBox is null",
+  "potentialJobFields": [{ "label": "field label as printed", "value": "value as printed" }],
   "isCredit": true or false,
   "items": [
     { "desc": "product code + description", "qty": number or null, "unit": unit price or null, "total": line total }
@@ -246,8 +258,19 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     const VALID_PO_LABELS = [
       'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PONO',
       'PO #', 'PO#', 'P.O. #', 'P.O.#', 'PURCHASE ORDER', 'CUSTOMER PO',
-      'JOB #', 'JOB NO', 'JOB NUMBER'
+      'JOB #', 'JOB NO', 'JOB NUMBER',
+      'WORK ORDER', 'W.O.', 'W/O',
+      'YOUR REFERENCE', 'YOUR REF', 'YOUR REF NO', 'YOUR REF #',
+      'CUSTOMER REF', 'CUSTOMER REFERENCE', 'CUST REF',
+      'REFERENCE', 'REF NO', 'REF #',
+      'CONTRACT NO', 'CONTRACT #', 'PROJECT NO', 'PROJECT #',
+      'ACCOUNT REF', 'ACCT REF', 'ORDER REF'
     ];
+
+    // Log all potential job fields GPT found for diagnosis
+    if (extracted.potentialJobFields?.length) {
+      console.log('[extract] potentialJobFields from GPT:', JSON.stringify(extracted.potentialJobFields));
+    }
     const FORBIDDEN_VALUES = ['104625']; // CSK Electric's Gescan account number — never a job number
 
     if (extracted.poBox) {

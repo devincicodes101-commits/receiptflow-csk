@@ -591,9 +591,17 @@ function reviewHTML() {
     const jobIcon = r.jobStatus === 'found'
         ? '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>'
         : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
+    // Build "potential fields" debug line when job not found
+    let potentialFieldsNote = '';
+    if (r.jobStatus !== 'found' && r.potentialJobFields?.length) {
+        const listed = r.potentialJobFields.map(f => `${escHtml(f.label)}: ${escHtml(String(f.value))}`).join(' | ');
+        potentialFieldsNote = `<div style="margin-top:4px;font-size:11px;color:#6B7280;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:4px;padding:5px 8px;">
+            <i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i><strong>Fields found on receipt:</strong> ${listed}</div>`;
+    }
+
     const jobMsg = r.jobStatus === 'found'
         ? `<span style="font-size:11.5px;color:#059669;"><i class="fa-solid fa-check" style="font-size:10px;"></i> Found in receipt${r.poFieldLabel ? ` (${r.poFieldLabel})` : ''}</span>`
-        : '<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>';
+        : `<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>${potentialFieldsNote}`;
 
     const confClass = r.confidence === 'high' ? 'confidence-high' : r.confidence === 'medium' ? 'confidence-medium' : 'confidence-low';
     const confIcon = r.confidence === 'high' ? 'fa-star' : r.confidence === 'medium' ? 'fa-star-half-stroke' : 'fa-star';
