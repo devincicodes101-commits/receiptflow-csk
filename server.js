@@ -84,64 +84,54 @@ CRITICAL CONTEXT:
 - The vendor's address is the supplier's own address on their letterhead, NOT the "Sold To" or "Ship To" address.
 
 ════════════════════════════════════════
-JOB NUMBER RULE — READ THIS CAREFULLY
+JOB NUMBER / PO FIELD — THREE STEPS
 ════════════════════════════════════════
-Look for a field whose printed label is one of:
-  "YOUR P.O. NO", "YOUR P.O.NO", "YOUR PO NO", "YOUR PO #",
-  "P.O. NO", "P.O.NO", "PO NO", "PO #", "PO NUMBER", "PO BOX",
+
+STEP 1 — Find the label:
+Search the entire document (header boxes, tables, grid layouts) for a field whose label is one of:
+  "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "PO NUMBER",
   "Purchase Order", "Customer PO", "Cust PO",
   "Job #", "Job No", "Job No.", "Job Number", "Job ID",
-  "Work Order", "Work Order #", "WO", "WO #", "W.O.", "W.O. #", "W/O", "W/O #",
-  "Your Reference", "Your Ref", "Your Ref No", "Your Ref #",
-  "Customer Ref", "Customer Reference", "Cust Ref",
-  "Reference", "Reference No", "Ref", "Ref No", "Ref #", "Ref. No",
-  "Contract No", "Contract #", "Project No", "Project #",
-  "Account Ref", "Acct Ref", "Order Ref", "P/O", "P/O #", "P/O NO"
+  "Work Order", "WO", "WO #", "W.O.", "W/O",
+  "Your Ref", "Your Reference", "Customer Ref",
+  "Reference No", "Ref No", "Ref #", "P/O", "P/O #"
+If no such label exists on the document → poBox: null, poRawText: null. Stop here.
 
-Look inside tables, grid boxes, and header blocks — the field may appear as a column header
-with its value in a cell directly below or beside it.
+STEP 2 — Read the cell:
+Look at the value cell directly next to or below that label.
+Read exactly what is physically printed in that cell.
+→ If the cell contains a number: proceed to step 3.
+→ If the cell is blank, empty, or contains only spaces/dashes: poBox: null, poRawText: null. Stop here.
+You MUST be able to quote the cell content verbatim. If you cannot, the cell is blank.
 
-Set poBox to the printed value in that cell if:
-  - The cell has an actual value (not blank, not dashes, not empty)
-  - The value is a number (typically 3–7 digits, e.g. 1178, 1249, 1095, 10583)
+STEP 3 — Validate and return:
+The value must be a plain number, 3–7 digits (e.g. 1178, 1249, 1095).
+Set poBox = that number. Set poRawText = the exact text you read from the cell.
 
-If no matching label exists OR its cell is blank → poBox: null.
+CRITICAL RULE: poRawText must always be filled when poBox is set.
+If you set poBox but cannot quote what you read in poRawText, go back — the cell was blank.
 
-NEVER use these as a job number (always null):
-  ✗ CUSTOMER NO / Account No — e.g. 104625 (this is CSK Electric's supplier account number)
-  ✗ ORDER NO / Order ID — e.g. 17798703-00 (supplier's own order reference, often 8+ digits or has dashes)
-  ✗ INVOICE NO / Document No / Transaction No
-  ✗ WAYBILL NO / Tracking No
-  ✗ Any value with 8 or more digits
-  ✗ Any value containing dashes that make it longer than a plain job number
-  ✗ Any value you are guessing or inferring
+NEVER use as a job number:
+  ✗ CUSTOMER NO / Account No (e.g. 104625) — CSK Electric's supplier account number
+  ✗ ORDER NO / Order ID (e.g. 17798703-00) — has dashes, 8+ digits
+  ✗ INVOICE NO, DOCUMENT NO, TRANSACTION NO, WAYBILL NO
+  ✗ Any number with 8 or more digits
+  ✗ Any number with dashes
+  ✗ Any number you are guessing or are not certain about
 
-GESCAN / SONEPAR DOCUMENTS (invoices, packing slips, counter sales — ALL types):
-  The top-right header box contains a table with columns such as:
-    | CUSTOMER NO | ORDER NO      | YOUR P.O. NO |
-    |   104625    | 17798703-00   |    1178      |
-  OR sometimes just two columns:
-    | CUSTOMER NO  | YOUR P.O. NO |
-    |    104625    |    1178      |
+GESCAN DOCUMENTS — header box layout:
+  WITH job number:     | CUSTOMER NO | ORDER NO    | YOUR P.O. NO |
+                       |   104625    | 17798703-00 |    1178      |  → poBox = "1178"
 
-  Rules for this box:
-  - CUSTOMER NO cell → always CSK Electric's account (104625). NEVER a job number.
-  - ORDER NO cell → the supplier's order reference. NEVER a job number.
-  - YOUR P.O. NO cell → THIS IS THE JOB NUMBER. Extract its value if non-empty.
+  WITHOUT job number:  | CUSTOMER NO | ORDER NO    | YOUR P.O. NO |
+                       |   104625    | 17798703-00 |              |  → poBox = null
 
-  IMPORTANT: YOUR P.O. NO appears on ALL Gescan document types — invoices, packing slips,
-  and counter sales. ALWAYS scan the top-right box for it.
+  The YOUR P.O. NO cell may be blank on many Gescan documents. A blank cell = null, always.
+  CUSTOMER NO and ORDER NO are never job numbers regardless of what they contain.
 
-  TWO outcomes only:
-  (A) YOUR P.O. NO cell has a printed number (e.g. 1178) → poBox = "1178"
-  (B) YOUR P.O. NO cell is blank, empty, or absent → poBox = null
-
-  If the cell is blank DO NOT fill it with any nearby number. Return null.
-  A blank or empty cell means no job number was entered on this document.
-
-IMPORTANT — also populate potentialJobFields:
-List EVERY header/reference field you see on the document (label + value), regardless of whether
-you recognised it as a PO field. Include "YOUR P.O. NO", "ORDER NO", "CUSTOMER NO", etc.
+POPULATE potentialJobFields:
+List every header/reference field on the document with its label and value,
+including YOUR P.O. NO (even if blank — show it as blank), ORDER NO, CUSTOMER NO.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates, ship dates.
@@ -322,8 +312,10 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         return FORBIDDEN_LABELS.some(v => fLabel.includes(normalize(v))) && fValue === valueStr;
       });
 
-      // Only reject rawText mismatch when rawText is present AND contradicts
+      // poRawText is REQUIRED when poBox is set — GPT must quote what it read from the cell.
+      // A blank cell has nothing to quote, so null rawText = blank cell = should be null.
       const rawText = (extracted.poRawText || '').trim();
+      const rawMissing = !rawText;
       const rawMismatch = rawText
         ? !rawText.replace(/\s/g, '').includes(valueStr.replace(/\s/g, ''))
         : false;
@@ -331,15 +323,17 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       console.log(
         `[extract] PO validation — label:"${extracted.poFieldLabel}" value:"${extracted.poBox}" ` +
         `labelOk:${labelOk} labelForbidden:${labelForbidden} forbidden:${valueForbidden} ` +
-        `tooLong:${tooLong} valueInForbiddenField:${valueInForbiddenField} rawMismatch:${rawMismatch}`
+        `tooLong:${tooLong} valueInForbiddenField:${valueInForbiddenField} ` +
+        `rawMissing:${rawMissing} rawMismatch:${rawMismatch}`
       );
 
-      if (labelForbidden)         _discardReason = `label "${extracted.poFieldLabel}" is a forbidden field type`;
-      else if (!labelOk)          _discardReason = `label "${extracted.poFieldLabel}" not in approved whitelist`;
-      else if (valueForbidden)    _discardReason = `value "${valueStr}" is a forbidden account number`;
-      else if (tooLong)           _discardReason = `value "${valueStr}" has too many digits (${digitsOnly.length})`;
-      else if (valueInForbiddenField) _discardReason = `value "${valueStr}" found in a forbidden field (ORDER NO / CUSTOMER NO) — likely read from wrong cell`;
-      else if (rawMismatch)       _discardReason = `rawText "${rawText}" does not contain value "${valueStr}"`;
+      if (labelForbidden)             _discardReason = `label "${extracted.poFieldLabel}" is a forbidden field type`;
+      else if (!labelOk)              _discardReason = `label "${extracted.poFieldLabel}" not in approved whitelist`;
+      else if (valueForbidden)        _discardReason = `value "${valueStr}" is a forbidden account number`;
+      else if (tooLong)               _discardReason = `value "${valueStr}" has too many digits (${digitsOnly.length})`;
+      else if (valueInForbiddenField) _discardReason = `value "${valueStr}" found in a forbidden field (ORDER NO / CUSTOMER NO)`;
+      else if (rawMissing)            _discardReason = `poRawText is empty — GPT could not quote the cell, meaning it was blank`;
+      else if (rawMismatch)           _discardReason = `poRawText "${rawText}" does not contain value "${valueStr}"`;
 
       if (_discardReason) {
         console.log(`[extract] DISCARDING poBox — reason: ${_discardReason}`);
