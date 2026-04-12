@@ -591,17 +591,42 @@ function reviewHTML() {
     const jobIcon = r.jobStatus === 'found'
         ? '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>'
         : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
-    // Build "potential fields" debug line when job not found
-    let potentialFieldsNote = '';
-    if (r.jobStatus !== 'found' && r.potentialJobFields?.length) {
-        const listed = r.potentialJobFields.map(f => `${escHtml(f.label)}: ${escHtml(String(f.value))}`).join(' | ');
-        potentialFieldsNote = `<div style="margin-top:4px;font-size:11px;color:#6B7280;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:4px;padding:5px 8px;">
-            <i class="fa-solid fa-magnifying-glass" style="margin-right:4px;"></i><strong>Fields found on receipt:</strong> ${listed}</div>`;
+    // Build debug panel for job number section
+    const raw = r._rawGpt || {};
+    let debugPanel = '';
+    if (r.jobStatus !== 'found') {
+        const rows = [];
+
+        // What GPT originally extracted for PO fields
+        rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">GPT poBox</td><td style="padding:3px 6px;font-family:monospace;color:${raw.poBox ? '#D97706' : '#9CA3AF'};">${raw.poBox != null ? escHtml(String(raw.poBox)) : '(null — GPT found nothing)'}</td></tr>`);
+        rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">GPT label</td><td style="padding:3px 6px;font-family:monospace;color:#374151;">${raw.poFieldLabel != null ? escHtml(String(raw.poFieldLabel)) : '(null)'}</td></tr>`);
+        rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">GPT rawText</td><td style="padding:3px 6px;font-family:monospace;color:#374151;">${raw.poRawText != null ? escHtml(String(raw.poRawText)) : '(null)'}</td></tr>`);
+
+        // Why it was discarded (if GPT did find something but server dropped it)
+        if (r._discardReason) {
+            rows.push(`<tr><td style="color:#DC2626;padding:3px 6px;white-space:nowrap;">Discarded</td><td style="padding:3px 6px;color:#DC2626;">${escHtml(r._discardReason)}</td></tr>`);
+        }
+
+        // All header fields GPT saw on the document
+        if (raw.potentialJobFields?.length) {
+            const fieldList = raw.potentialJobFields.map(f => `<span style="background:#E5E7EB;border-radius:3px;padding:1px 5px;margin:2px;display:inline-block;">${escHtml(f.label)}: <strong>${escHtml(String(f.value))}</strong></span>`).join('');
+            rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;vertical-align:top;">All fields</td><td style="padding:3px 6px;">${fieldList}</td></tr>`);
+        }
+
+        // GPT notes
+        if (raw.notes) {
+            rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">Notes</td><td style="padding:3px 6px;color:#6B7280;font-size:11px;">${escHtml(raw.notes)}</td></tr>`);
+        }
+
+        debugPanel = `<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;">
+            <div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px;"><i class="fa-solid fa-bug" style="margin-right:4px;"></i>Debug — Raw AI Extraction</div>
+            <table style="font-size:11.5px;width:100%;border-collapse:collapse;">${rows.join('')}</table>
+        </div>`;
     }
 
     const jobMsg = r.jobStatus === 'found'
         ? `<span style="font-size:11.5px;color:#059669;"><i class="fa-solid fa-check" style="font-size:10px;"></i> Found in receipt${r.poFieldLabel ? ` (${r.poFieldLabel})` : ''}</span>`
-        : `<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>${potentialFieldsNote}`;
+        : `<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>${debugPanel}`;
 
     const confClass = r.confidence === 'high' ? 'confidence-high' : r.confidence === 'medium' ? 'confidence-medium' : 'confidence-low';
     const confIcon = r.confidence === 'high' ? 'fa-star' : r.confidence === 'medium' ? 'fa-star-half-stroke' : 'fa-star';

@@ -254,52 +254,62 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       });
     }
 
-    // ── Server-side PO validation — multiple layers against hallucination ──
+    // ── Capture raw GPT extraction BEFORE any server filtering (for debug) ──
+    const _rawGpt = {
+      poBox:              extracted.poBox        ?? null,
+      poFieldLabel:       extracted.poFieldLabel ?? null,
+      poRawText:          extracted.poRawText    ?? null,
+      potentialJobFields: extracted.potentialJobFields ?? [],
+      notes:              extracted.notes        ?? null,
+      confidence:         extracted.confidence   ?? null,
+    };
+    console.log('[extract] RAW GPT extraction:', JSON.stringify(_rawGpt));
+
+    // ── Server-side PO validation ──
     const VALID_PO_LABELS = [
       'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PONO',
       'PO #', 'PO#', 'P.O. #', 'P.O.#', 'PURCHASE ORDER', 'CUSTOMER PO',
-      'JOB #', 'JOB NO', 'JOB NUMBER',
-      'WORK ORDER', 'W.O.', 'W/O',
+      'JOB', 'JOB #', 'JOB NO', 'JOB NO.', 'JOB NUMBER', 'JOB ID',
+      'WORK ORDER', 'WORK ORDER #', 'WO', 'WO #', 'W.O.', 'W.O. #', 'W/O', 'W/O #',
       'YOUR REFERENCE', 'YOUR REF', 'YOUR REF NO', 'YOUR REF #',
       'CUSTOMER REF', 'CUSTOMER REFERENCE', 'CUST REF',
-      'REFERENCE', 'REF NO', 'REF #',
+      'REFERENCE', 'REFERENCE NO', 'REF', 'REF NO', 'REF #', 'REF. NO',
       'CONTRACT NO', 'CONTRACT #', 'PROJECT NO', 'PROJECT #',
-      'ACCOUNT REF', 'ACCT REF', 'ORDER REF'
+      'ACCOUNT REF', 'ACCT REF', 'ORDER REF', 'P/O', 'P/O #', 'P/O NO'
     ];
+    const FORBIDDEN_VALUES = ['104625']; // CSK Electric's Gescan account — never a job number
 
-    // Log all potential job fields GPT found for diagnosis
-    if (extracted.potentialJobFields?.length) {
-      console.log('[extract] potentialJobFields from GPT:', JSON.stringify(extracted.potentialJobFields));
-    }
-    const FORBIDDEN_VALUES = ['104625']; // CSK Electric's Gescan account number — never a job number
+    let _discardReason = null;
 
     if (extracted.poBox) {
-      const labelUpper = (extracted.poFieldLabel || '').toUpperCase().replace(/\s+/g, ' ').trim();
+      const labelUpper = (extracted.poFieldLabel || '').toUpperCase().replace(/[.\s]+/g, ' ').trim();
       const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(v));
       const valueStr = String(extracted.poBox).trim();
       const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
       const digitsOnly = valueStr.replace(/[^0-9]/g, '');
-      const tooLong = digitsOnly.length > 5;
+      const tooLong = digitsOnly.length > 7; // allow up to 7 digits — blocks ORDER NOs like 17798703
 
-      // If GPT provided poRawText AND it does not contain the stated value → contradiction → discard.
-      // Absence of poRawText is not an error — GPT may omit it on valid receipts.
+      // Only reject if rawText is present AND contradicts the value
       const rawText = (extracted.poRawText || '').trim();
       const rawMismatch = rawText
         ? !rawText.replace(/\s/g, '').includes(valueStr.replace(/\s/g, ''))
         : false;
 
       console.log(
-        `[extract] PO check — label:"${extracted.poFieldLabel}" value:"${extracted.poBox}" ` +
-        `foundExplicitly:${extracted.poFoundExplicitly} rawText:"${rawText}" ` +
+        `[extract] PO validation — label:"${extracted.poFieldLabel}" value:"${extracted.poBox}" ` +
         `labelOk:${labelOk} forbidden:${valueForbidden} tooLong:${tooLong} rawMismatch:${rawMismatch}`
       );
 
-      if (!labelOk || valueForbidden || tooLong || rawMismatch) {
-        console.log(`[extract] Discarding poBox "${extracted.poBox}"`);
+      if (!labelOk)        _discardReason = `label "${extracted.poFieldLabel}" not in approved whitelist`;
+      else if (valueForbidden) _discardReason = `value "${valueStr}" is a forbidden account number`;
+      else if (tooLong)    _discardReason = `value "${valueStr}" has too many digits (${digitsOnly.length})`;
+      else if (rawMismatch) _discardReason = `rawText "${rawText}" does not contain value "${valueStr}"`;
+
+      if (_discardReason) {
+        console.log(`[extract] DISCARDING poBox — reason: ${_discardReason}`);
         extracted.poBox = null;
         extracted.poFieldLabel = null;
         extracted.poRawText = null;
-        extracted.poFoundExplicitly = false;
       }
     }
 
@@ -350,7 +360,9 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         jobStatus,
         imageDataUrl,
         receiptBlobUrl,
-        isPdf: mimeType === 'application/pdf'
+        isPdf: mimeType === 'application/pdf',
+        _rawGpt,          // full raw GPT extraction before server filtering
+        _discardReason,   // why poBox was discarded (null if kept or never set)
       }
     });
 
