@@ -86,31 +86,36 @@ CRITICAL CONTEXT:
 ════════════════════════════════════════
 JOB NUMBER RULE — READ THIS CAREFULLY
 ════════════════════════════════════════
-The job number (poBox) must come from a field whose printed label is EXACTLY one of:
-  ✓ "YOUR P.O. NO" or "YOUR P.O.NO"
-  ✓ "P.O. NO" or "PO NO" or "P.O.NO"
-  ✓ "PO #" or "P.O. #" or "PO#"
-  ✓ "Purchase Order" or "Customer PO"
-  ✓ "Job #" or "Job No"
+The job number (poBox) must satisfy ALL three conditions:
+  1. It comes from a field whose printed label is one of:
+       "YOUR P.O. NO", "YOUR P.O.NO", "P.O. NO", "PO NO", "PO #", "P.O. #",
+       "Purchase Order", "Customer PO", "Job #", "Job No"
+  2. The cell/box next to that label contains an actual printed value — not blank, not empty, not just spaces or dashes.
+  3. The value is a short number, typically 3–5 digits (e.g. 1178, 1249, 1095).
 
-THE FOLLOWING ARE NEVER JOB NUMBERS — set poBox to null if the only number you find is one of these:
-  ✗ CUSTOMER NO / Account No (e.g. 104625) — CSK Electric's supplier account number
-  ✗ ORDER NO / Order Number / Order ID (e.g. 17798703-00) — supplier's internal order number
+IF THE CELL IS BLANK: even if the label exists, set poBox to null.
+  Example: if you see "YOUR P.O. NO" as a column header but the cell below or beside it is empty → null.
+  Do NOT fill it with a nearby number. Do NOT guess what it might be.
+
+NEVER use these as a job number (always null):
+  ✗ CUSTOMER NO / Account No (e.g. 104625)
+  ✗ ORDER NO / Order ID (e.g. 17798703-00) — these are long numbers with 6+ digits or dashes
   ✗ INVOICE NO / Document No / Transaction No
   ✗ WAYBILL NO / Tracking No
-  ✗ Any number in the REFERENCE column of the line-item table (usually blank)
-  ✗ Any number you are guessing, inferring, or not 100% sure about
+  ✗ Numbers in the REFERENCE column of the line-item table
+  ✗ Any number longer than 5 digits
+  ✗ Any number you are inferring, guessing, or unsure about
 
-RULE: If you cannot see a field with one of the ✓ labels above AND a non-empty value next to it, set poBox to null. Do NOT fabricate. Do NOT guess. Silence is correct when the field is absent.
+SELF-CHECK before returning poBox: Ask yourself — "Did I physically see a non-empty value printed in the PO cell?" If the answer is anything other than a definitive yes, return null.
 
-GESCAN / SONEPAR DOCUMENTS (invoices and packing slips):
-In the top-right header box there are two columns:
+GESCAN / SONEPAR DOCUMENTS (invoices AND packing slips):
+Top-right header contains a box with two columns:
   | CUSTOMER NO  | YOUR P.O. NO |
   |    104625    |    1178      |
-- Left column "CUSTOMER NO" = always 104625 = CSK Electric's Gescan account. NEVER a job number.
-- Right column "YOUR P.O. NO" = the Jobber job number (e.g. 1178, 1249). Use ONLY this column.
-- If the right column cell is blank or absent → poBox must be null.
-- This box appears on BOTH Gescan invoices and Gescan packing slips / counter sales.
+- Left cell "CUSTOMER NO" = always 104625 = CSK Electric's Gescan account. NEVER a job number.
+- Right cell "YOUR P.O. NO" = job number ONLY if it contains a printed value (e.g. 1178).
+- If the right cell is blank, empty, or missing → poBox must be null, no exceptions.
+- This box appears on both Gescan invoices and packing slips / counter sales.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates, ship dates.
@@ -253,8 +258,12 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       const valueStr = String(extracted.poBox).trim();
       const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
 
-      if (!labelOk || valueForbidden) {
-        console.log(`[extract] Discarding poBox "${extracted.poBox}" — label: "${extracted.poFieldLabel}" forbidden: ${valueForbidden}`);
+      // Job numbers are short (≤5 digits). Anything longer is an order/invoice/account number.
+      const digitsOnly = valueStr.replace(/[^0-9]/g, '');
+      const tooLong = digitsOnly.length > 5;
+
+      if (!labelOk || valueForbidden || tooLong) {
+        console.log(`[extract] Discarding poBox "${extracted.poBox}" — labelOk:${labelOk} forbidden:${valueForbidden} tooLong:${tooLong}`);
         extracted.poBox = null;
         extracted.poFieldLabel = null;
       }
