@@ -120,6 +120,76 @@
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
         }
+
+        /* ── Mobile bottom nav ── */
+        #mobile-nav {
+            display: none;
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--sidebar-bg);
+            border-top: 1px solid #262629;
+            padding: 6px 0 env(safe-area-inset-bottom, 6px);
+            z-index: 200;
+            justify-content: space-around;
+            align-items: center;
+        }
+        .mnav-item {
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            padding: 6px 14px; color: #6B7280; cursor: pointer;
+            border-radius: 6px; transition: color 0.12s; position: relative;
+        }
+        .mnav-item.active { color: var(--brand); }
+        .mnav-item i { font-size: 19px; }
+        .mnav-item span { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+        .mnav-badge {
+            position: absolute; top: 2px; right: 8px;
+            background: #DC2626; color: #fff; font-size: 9px; font-weight: 700;
+            padding: 1px 4px; border-radius: 8px; line-height: 1.4;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 640px) {
+            .sidebar { display: none !important; }
+            #mobile-nav { display: flex !important; }
+
+            /* Content area */
+            #content { padding: 14px !important; padding-bottom: 82px !important; }
+            header { padding: 0 14px !important; height: auto !important; min-height: 44px; flex-wrap: wrap; gap: 6px; }
+            #api-status, #jobber-status { font-size: 10px !important; padding: 2px 7px !important; }
+
+            /* Stat grid 2-col */
+            .stat-grid { grid-template-columns: 1fr 1fr !important; }
+
+            /* Upload zone */
+            .upload-zone { padding: 28px 14px !important; }
+
+            /* Review: stack image above form */
+            .review-layout { flex-direction: column !important; gap: 16px !important; }
+            .review-panel-img { width: 100% !important; flex-shrink: unset !important; }
+            .review-panel-img .receipt-img-wrap { height: 200px !important; }
+
+            /* Form grid single col */
+            .form-grid-2 { grid-template-columns: 1fr !important; }
+
+            /* Totals row: stack */
+            .totals-row { flex-direction: column !important; gap: 6px !important; align-items: flex-start !important; }
+
+            /* Action buttons full width */
+            .action-row { flex-direction: column !important; gap: 8px !important; }
+            .action-row .btn { width: 100%; justify-content: center; }
+            .action-row .btn-ghost { margin-left: 0 !important; }
+
+            /* History header */
+            .history-header { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+            .history-search-row { flex-direction: column !important; gap: 8px !important; }
+            .history-search-row .form-input { width: 100% !important; }
+
+            /* Tables: horizontal scroll */
+            .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; }
+
+            /* Max width reset */
+            .fade-in[style*="max-width"] { max-width: 100% !important; }
+        }
     </style>
 </head>
 <body>
@@ -177,6 +247,27 @@
 </div>
 
 <div id="toast-container" style="position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
+
+<!-- Mobile bottom nav -->
+<nav id="mobile-nav">
+    <div class="mnav-item active" data-view="upload" onclick="navigate('upload')">
+        <i class="fa-solid fa-cloud-arrow-up"></i>
+        <span>Upload</span>
+    </div>
+    <div class="mnav-item" data-view="history" onclick="navigate('history')">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span>History</span>
+    </div>
+    <div class="mnav-item" data-view="errors" onclick="navigate('errors')">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span id="mnav-error-label">Errors</span>
+        <span class="mnav-badge" id="mnav-error-badge" style="display:none;"></span>
+    </div>
+    <div class="mnav-item" data-view="settings" onclick="navigate('settings')">
+        <i class="fa-solid fa-gear"></i>
+        <span>Settings</span>
+    </div>
+</nav>
 <input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none">
 
 <script>
@@ -224,9 +315,9 @@ const stats = () => {
 function updateBadge() {
     const c = state.history.filter(r => r.status === 'error').length;
     const b = document.getElementById('error-badge');
-    if (!b) return;
-    b.textContent = c;
-    b.style.display = c > 0 ? 'inline' : 'none';
+    if (b) { b.textContent = c; b.style.display = c > 0 ? 'inline' : 'none'; }
+    const mb = document.getElementById('mnav-error-badge');
+    if (mb) { mb.textContent = c; mb.style.display = c > 0 ? 'inline' : 'none'; }
 }
 
 function toast(msg, type = 'info', duration = 3500) {
@@ -347,6 +438,7 @@ function navigate(view) {
     state.receipt = null;
     state.editingJobId = null;
     document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === view));
+    document.querySelectorAll('.mnav-item').forEach(i => i.classList.toggle('active', i.dataset.view === view));
     const titles = {
         upload: 'Upload Receipt', history: 'Processing History',
         errors: 'Error Queue', settings: 'Settings', review: 'Review Receipt'
@@ -377,7 +469,7 @@ function uploadHTML() {
     const s = stats();
     const hasHistory = state.history.length > 0;
     return `<div class="fade-in" style="max-width:860px;">
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
+        <div class="stat-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
             <div class="stat-card">
                 <div class="stat-value">${s.total}</div>
                 <div class="stat-label">Total Processed</div>
@@ -478,10 +570,10 @@ function reviewHTML() {
     const confIcon = r.confidence === 'high' ? 'fa-star' : r.confidence === 'medium' ? 'fa-star-half-stroke' : 'fa-star';
 
     return `<div class="fade-in" style="max-width:980px;">
-        <div style="display:flex;gap:22px;">
+        <div class="review-layout" style="display:flex;gap:22px;">
 
             <!-- Receipt Image -->
-            <div style="width:360px;flex-shrink:0;">
+            <div class="review-panel-img" style="width:360px;flex-shrink:0;">
                 <div class="receipt-img-wrap" style="height:500px;">
                     ${r.isPdf
                         ? `<div style="text-align:center;padding:40px 20px;">
@@ -517,7 +609,7 @@ function reviewHTML() {
                 </div>
 
                 <!-- Fields -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div class="form-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
                     <div>
                         <label class="form-label">Vendor / Store</label>
                         <input class="form-input" value="${escHtml(r.vendor || '')}" id="f-vendor">
@@ -551,8 +643,8 @@ function reviewHTML() {
                 <!-- Line Items -->
                 <div style="margin-bottom:16px;">
                     <label class="form-label">Line Items</label>
-                    <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;">
-                        <table class="data-table" style="font-size:12.5px;">
+                    <div class="table-scroll" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;">
+                        <table class="data-table" style="font-size:12.5px;min-width:420px;">
                             <thead>
                                 <tr>
                                     <th style="padding:7px 10px;">Description</th>
@@ -597,7 +689,7 @@ function reviewHTML() {
                 </div>
 
                 <!-- Actions -->
-                <div style="display:flex;gap:8px;padding-top:16px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
+                <div class="action-row" style="display:flex;gap:8px;padding-top:16px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
                     <button class="btn btn-jobber" id="btn-jobber">
                         <i class="fa-solid fa-briefcase" style="font-size:12px;"></i> Post to Jobber
                     </button>
@@ -619,9 +711,9 @@ function reviewHTML() {
 /* ── History View ── */
 function historyHTML() {
     return `<div class="fade-in">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div class="history-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
             <div style="font-size:15px;font-weight:700;color:#111827;">All Receipts <span style="font-size:13px;font-weight:500;color:#6B7280;margin-left:6px;">${state.history.length} total</span></div>
-            <div style="display:flex;gap:8px;">
+            <div class="history-search-row" style="display:flex;gap:8px;">
                 <input class="form-input" placeholder="Search vendor or invoice..." style="width:220px;font-size:12.5px;" id="history-search">
                 <select class="form-input" style="width:130px;font-size:12.5px;" id="history-filter">
                     <option value="all">All Status</option>
@@ -636,8 +728,8 @@ function historyHTML() {
                 <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px;">No receipts yet</div>
                 <div style="font-size:13px;color:#9CA3AF;">Upload a receipt to get started</div>
                </div>`
-            : `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
-                <table class="data-table">
+            : `<div class="table-scroll" style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+                <table class="data-table" style="min-width:640px;">
                     <thead>
                         <tr>
                             <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
