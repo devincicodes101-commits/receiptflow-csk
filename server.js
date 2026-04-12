@@ -294,8 +294,10 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     let _discardReason = null;
 
     if (extracted.poBox) {
-      const labelUpper = (extracted.poFieldLabel || '').toUpperCase().replace(/[.\s]+/g, ' ').trim();
-      const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(v));
+      // Normalize both sides: strip dots/extra spaces before comparing
+      const normalize = s => s.toUpperCase().replace(/[.\s]+/g, ' ').trim();
+      const labelUpper = normalize(extracted.poFieldLabel || '');
+      const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(normalize(v)));
       const valueStr = String(extracted.poBox).trim();
       const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
       const digitsOnly = valueStr.replace(/[^0-9]/g, '');
