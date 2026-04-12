@@ -95,18 +95,18 @@ JOB NUMBER DETECTION (very important):
 - If you cannot find a clearly labelled PO field with a value, set poBox to null. DO NOT fabricate or guess.
 
 PACKING SLIPS / COUNTER SALES:
-- Documents labelled "PACKING SLIP", "COUNTER SALE", "DELIVERY SLIP", or "PICKING SLIP" typically do NOT have a PO number.
-- On these documents, the REFERENCE column is usually blank. Set poBox to null.
-- Do not use the ORDER DATE field, ORDER NO field, or any other field as a substitute.
+- Gescan packing slips and counter sales have the SAME two-column box as invoices — they DO contain "YOUR P.O. NO".
+- Always check the top-right box for "YOUR P.O. NO" regardless of document type.
+- The REFERENCE column in the line item table is separate and is usually blank — do NOT use it as a job number.
 
-CRITICAL — GESCAN/SONEPAR INVOICES SPECIFICALLY:
-On a Gescan INVOICE (not packing slip) there is a two-column box near the top right:
+CRITICAL — GESCAN/SONEPAR DOCUMENTS (invoices AND packing slips):
+There is a small box near the top right with this layout:
   | CUSTOMER NO  | YOUR P.O. NO |
   |    104625    |    1178      |
-- "CUSTOMER NO" (104625) = Gescan's internal account number for CSK Electric. NEVER a job number.
-- "YOUR P.O. NO" (e.g. 1178, 1249, 1095) = the Jobber job number. Use this ONLY on invoices.
-- 104625 is ALWAYS the CUSTOMER NO. If you see 104625 anywhere, ignore it completely for job number purposes.
-- On a Gescan PACKING SLIP there is no "YOUR P.O. NO" column — set poBox to null.
+- "CUSTOMER NO" (104625) = Gescan's account number for CSK Electric. NEVER a job number under any circumstances.
+- "YOUR P.O. NO" (e.g. 1178, 1249, 1095) = the Jobber job number. Always use this if present.
+- 104625 is ALWAYS the CUSTOMER NO. If you see 104625 anywhere on the document, ignore it for job number purposes.
+- If the "YOUR P.O. NO" cell is blank or absent, set poBox to null.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates or shipped dates.
