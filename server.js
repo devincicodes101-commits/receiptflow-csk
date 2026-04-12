@@ -79,77 +79,76 @@ const upload = multer({
 const EXTRACTION_PROMPT = `You are an invoice parser for CSK Electric, an electrical contractor based in Abbotsford, BC.
 
 CRITICAL CONTEXT:
-- CSK Electric is the CUSTOMER/BUYER on these invoices — NOT the vendor. Do NOT use CSK Electric's address as the vendor address.
+- CSK Electric is the CUSTOMER/BUYER — NOT the vendor. Do NOT use CSK Electric's address as the vendor address.
 - The VENDOR is the supplier/seller (e.g. Gescan, Westburne, Home Depot, etc.)
-- The vendor's address is the supplier's own address printed on their letterhead/header, NOT the "Sold To" or "Ship To" address.
+- The vendor's address is the supplier's own address on their letterhead, NOT the "Sold To" or "Ship To" address.
 
-JOB NUMBER DETECTION (very important):
-- ONLY extract a job number if there is a field EXPLICITLY labelled one of: "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "Purchase Order", "Customer PO", "Job #"
-- The value must be a short number (typically 3-5 digits, e.g. "1178", "1249", "1391-RETURN")
-- If the PO field is blank, missing, or this is a packing slip / counter sale with no PO field → set poBox to null
-- DO NOT use any of these as a job number under any circumstances:
-  * ORDER NO, ORDER ID, or document/transaction numbers (e.g. "17798703-00") — these are supplier internal numbers
-  * CUSTOMER NO or account numbers (e.g. "104625") — this is CSK Electric's supplier account number
-  * Invoice numbers, waybill numbers, or any other reference numbers
-  * Any number you are guessing or inferring — only use values from an explicitly labelled PO field
-- If you cannot find a clearly labelled PO field with a value, set poBox to null. DO NOT fabricate or guess.
+════════════════════════════════════════
+JOB NUMBER RULE — READ THIS CAREFULLY
+════════════════════════════════════════
+The job number (poBox) must come from a field whose printed label is EXACTLY one of:
+  ✓ "YOUR P.O. NO" or "YOUR P.O.NO"
+  ✓ "P.O. NO" or "PO NO" or "P.O.NO"
+  ✓ "PO #" or "P.O. #" or "PO#"
+  ✓ "Purchase Order" or "Customer PO"
+  ✓ "Job #" or "Job No"
 
-PACKING SLIPS / COUNTER SALES:
-- Gescan packing slips and counter sales have the SAME two-column box as invoices — they DO contain "YOUR P.O. NO".
-- Always check the top-right box for "YOUR P.O. NO" regardless of document type.
-- The REFERENCE column in the line item table is separate and is usually blank — do NOT use it as a job number.
+THE FOLLOWING ARE NEVER JOB NUMBERS — set poBox to null if the only number you find is one of these:
+  ✗ CUSTOMER NO / Account No (e.g. 104625) — CSK Electric's supplier account number
+  ✗ ORDER NO / Order Number / Order ID (e.g. 17798703-00) — supplier's internal order number
+  ✗ INVOICE NO / Document No / Transaction No
+  ✗ WAYBILL NO / Tracking No
+  ✗ Any number in the REFERENCE column of the line-item table (usually blank)
+  ✗ Any number you are guessing, inferring, or not 100% sure about
 
-CRITICAL — GESCAN/SONEPAR DOCUMENTS (invoices AND packing slips):
-There is a small box near the top right with this layout:
+RULE: If you cannot see a field with one of the ✓ labels above AND a non-empty value next to it, set poBox to null. Do NOT fabricate. Do NOT guess. Silence is correct when the field is absent.
+
+GESCAN / SONEPAR DOCUMENTS (invoices and packing slips):
+In the top-right header box there are two columns:
   | CUSTOMER NO  | YOUR P.O. NO |
   |    104625    |    1178      |
-- "CUSTOMER NO" (104625) = Gescan's account number for CSK Electric. NEVER a job number under any circumstances.
-- "YOUR P.O. NO" (e.g. 1178, 1249, 1095) = the Jobber job number. Always use this if present.
-- 104625 is ALWAYS the CUSTOMER NO. If you see 104625 anywhere on the document, ignore it for job number purposes.
-- If the "YOUR P.O. NO" cell is blank or absent, set poBox to null.
+- Left column "CUSTOMER NO" = always 104625 = CSK Electric's Gescan account. NEVER a job number.
+- Right column "YOUR P.O. NO" = the Jobber job number (e.g. 1178, 1249). Use ONLY this column.
+- If the right column cell is blank or absent → poBox must be null.
+- This box appears on BOTH Gescan invoices and Gescan packing slips / counter sales.
 
 INVOICE DATE:
-- Use the main "Invoice Date" field. Ignore order dates or shipped dates.
+- Use the main "Invoice Date" field. Ignore order dates, ship dates.
 - Return in YYYY-MM-DD format.
 
 CREDIT / RETURN INVOICES:
-- If the invoice is marked "RETURN MERCHANDISE", "CREDIT", "CREDIT MEMO", or "DO NOT PAY", it is a credit/return.
-- For credits, all monetary amounts (subtotal, tax, total) must be NEGATIVE numbers (e.g. -807.91).
-- Note this clearly in the "notes" field.
+- If marked "RETURN MERCHANDISE", "CREDIT", "CREDIT MEMO", or "DO NOT PAY" → isCredit: true
+- All monetary amounts must be NEGATIVE for credits (e.g. -807.91)
 
 LINE ITEMS:
-- Only list distinct product/service lines. Do not duplicate items.
-- Each line item should have a product code or description, quantity, unit price, and line total.
-- For credit invoices, line item totals should be negative.
-- Fees, taxes, and surcharges can be separate line items.
+- List distinct product/service lines only. No duplicates.
+- Each line: product code + description, quantity, unit price, line total.
+- Credit line totals are negative.
+- Include fees and surcharges as separate lines.
 
 TOTALS:
-- subtotal = gross total before taxes (negative for credits)
-- tax = sum of all taxes — GST, HST, PST, etc. (negative for credits)
-- total = final amount due (negative for credits)
+- subtotal = gross total before taxes
+- tax = all taxes (GST, HST, PST, etc.)
+- total = final amount due
+- All negative for credit invoices.
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
+Return ONLY valid JSON, no markdown, no explanation:
 {
-  "vendor": "the supplier/seller company name",
-  "address": "the supplier's own address from their letterhead (NOT CSK Electric's address)",
-  "invoiceNo": "invoice number",
+  "vendor": "supplier company name",
+  "address": "supplier's own address from their letterhead",
+  "invoiceNo": "invoice or document number",
   "date": "YYYY-MM-DD",
-  "poBox": "value from YOUR P.O. NO or PO# field exactly as printed, null if not present",
-  "poFieldLabel": "the exact label text of the PO field found (e.g. 'YOUR P.O. NO', 'PO #')",
+  "poBox": "value from a ✓-labelled PO field exactly as printed, or null",
+  "poFieldLabel": "the exact label text you saw on the document, or null if poBox is null",
   "isCredit": true or false,
   "items": [
-    {
-      "desc": "product code + description",
-      "qty": number or null,
-      "unit": unit price as number or null,
-      "total": line total as number
-    }
+    { "desc": "product code + description", "qty": number or null, "unit": unit price or null, "total": line total }
   ],
   "subtotal": number,
   "tax": number,
   "total": number,
   "confidence": "high" | "medium" | "low",
-  "notes": "any observations including if this is a credit/return"
+  "notes": "any observations"
 }
 
 If a field cannot be determined, use null. Never fabricate values.`;
@@ -237,6 +236,28 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       return res.status(500).json({
         error: 'AI returned invalid JSON. Raw response: ' + rawContent.substring(0, 200)
       });
+    }
+
+    // ── Server-side PO label validation (second line of defence against hallucination) ──
+    // If GPT returned a poBox but the label it cited isn't in our approved list, discard it.
+    const VALID_PO_LABELS = [
+      'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PONO',
+      'PO #', 'PO#', 'P.O. #', 'P.O.#', 'PURCHASE ORDER', 'CUSTOMER PO',
+      'JOB #', 'JOB NO', 'JOB NUMBER'
+    ];
+    const FORBIDDEN_VALUES = ['104625']; // CSK Electric's Gescan account number — never a job number
+
+    if (extracted.poBox) {
+      const labelUpper = (extracted.poFieldLabel || '').toUpperCase().replace(/\s+/g, ' ').trim();
+      const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(v));
+      const valueStr = String(extracted.poBox).trim();
+      const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
+
+      if (!labelOk || valueForbidden) {
+        console.log(`[extract] Discarding poBox "${extracted.poBox}" — label: "${extracted.poFieldLabel}" forbidden: ${valueForbidden}`);
+        extracted.poBox = null;
+        extracted.poFieldLabel = null;
+      }
     }
 
     // Derive jobNo from poBox.
