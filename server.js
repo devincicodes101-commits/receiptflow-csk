@@ -119,6 +119,11 @@ NEVER use as a job number:
   ✗ Any number with dashes
   ✗ Any number you are guessing or are not certain about
 
+GESCAN DOCUMENTS — invoice number:
+  Gescan packing slips and counter sales do not have a separate "Invoice No" field.
+  Use the ORDER NO value (e.g. 17798703-00) as the invoiceNo.
+  The ORDER NO is in the top-right header box under the label "ORDER NO".
+
 GESCAN DOCUMENTS — header box layout:
   WITH job number:     | CUSTOMER NO | ORDER NO    | YOUR P.O. NO |
                        |   104625    | 17798703-00 |    1178      |  → poBox = "1178"
@@ -134,7 +139,9 @@ List every header/reference field on the document with its label and value,
 including YOUR P.O. NO (even if blank — show it as blank), ORDER NO, CUSTOMER NO.
 
 INVOICE DATE:
-- Use the main "Invoice Date" field. Ignore order dates, ship dates.
+- Prefer fields labelled "Invoice Date", "Date", "Invoice Date".
+- If no Invoice Date label exists, fall back to "Order Date", "Transaction Date", or any other date present.
+- For Gescan documents, the date column is labelled "ORDER DATE" — use that value.
 - Return in YYYY-MM-DD format.
 
 CREDIT / RETURN INVOICES:
@@ -200,8 +207,8 @@ async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
   const { id: jobId } = await uploadRes.json();
   console.log('[llamaparse] job started:', jobId);
 
-  // Poll every 1 second for up to 30 seconds
-  for (let i = 0; i < 30; i++) {
+  // Poll every 1 second for up to 60 seconds
+  for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 1000));
 
     const statusRes = await fetch(
@@ -225,7 +232,7 @@ async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
     }
   }
 
-  throw new Error('LlamaParse timeout — job did not complete in 30 seconds');
+  throw new Error('LlamaParse timeout — job did not complete in 60 seconds');
 }
 
 app.post('/api/extract', upload.single('receipt'), async (req, res) => {
