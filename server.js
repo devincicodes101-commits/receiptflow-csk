@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const { put: blobPut } = require('@vercel/blob');
 const OpenAI = require('openai');
 
@@ -12,6 +13,56 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser(process.env.SESSION_SECRET || 'fallback-secret-change-me'));
+
+// ── Auth middleware — protects all /api routes except login + check ──
+app.use((req, res, next) => {
+  const open = ['/api/login', '/api/auth/check'];
+  if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
+  const session = req.signedCookies?.rf_session;
+  if (session) return next();
+  return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+});
+
+// ── Login ──
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required.' });
+  }
+
+  // Support up to 3 users via env vars
+  const users = [
+    { u: process.env.AUTH_USER,   p: process.env.AUTH_PASS   },
+    { u: process.env.AUTH_USER_2, p: process.env.AUTH_PASS_2 },
+    { u: process.env.AUTH_USER_3, p: process.env.AUTH_PASS_3 },
+  ].filter(x => x.u && x.p);
+
+  const match = users.find(x => x.u === username && x.p === password);
+  if (!match) return res.status(401).json({ error: 'Invalid username or password.' });
+
+  res.cookie('rf_session', username, {
+    signed: true,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  });
+  res.json({ success: true, username });
+});
+
+// ── Logout ──
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('rf_session');
+  res.json({ success: true });
+});
+
+// ── Auth check ──
+app.get('/api/auth/check', (req, res) => {
+  const session = req.signedCookies?.rf_session;
+  if (session) return res.json({ authenticated: true, username: session });
+  return res.status(401).json({ authenticated: false });
+});
 
 // Store uploads in memory (base64) — no disk writes needed
 const storage = multer.memoryStorage();
