@@ -130,8 +130,14 @@ GESCAN / SONEPAR DOCUMENTS (invoices, packing slips, counter sales — ALL types
   - YOUR P.O. NO cell → THIS IS THE JOB NUMBER. Extract its value if non-empty.
 
   IMPORTANT: YOUR P.O. NO appears on ALL Gescan document types — invoices, packing slips,
-  and counter sales. Do NOT assume it is absent. ALWAYS scan the top-right box for it.
-  If the cell under "YOUR P.O. NO" contains a number like 1178, set poBox = "1178".
+  and counter sales. ALWAYS scan the top-right box for it.
+
+  TWO outcomes only:
+  (A) YOUR P.O. NO cell has a printed number (e.g. 1178) → poBox = "1178"
+  (B) YOUR P.O. NO cell is blank, empty, or absent → poBox = null
+
+  If the cell is blank DO NOT fill it with any nearby number. Return null.
+  A blank or empty cell means no job number was entered on this document.
 
 IMPORTANT — also populate potentialJobFields:
 List EVERY header/reference field you see on the document (label + value), regardless of whether
@@ -290,20 +296,33 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       'ACCOUNT REF', 'ACCT REF', 'ORDER REF', 'P/O', 'P/O #', 'P/O NO'
     ];
     const FORBIDDEN_VALUES = ['104625']; // CSK Electric's Gescan account — never a job number
+    // Labels that are NEVER a PO/job field — if GPT cites one of these as the label, discard it
+    const FORBIDDEN_LABELS = ['ORDER NO', 'ORDER NUMBER', 'CUSTOMER NO', 'CUSTOMER NUMBER',
+      'ACCOUNT NO', 'ACCOUNT NUMBER', 'INVOICE NO', 'INVOICE NUMBER', 'DOCUMENT NO',
+      'TRANSACTION NO', 'WAYBILL NO', 'TRACKING NO'];
 
     let _discardReason = null;
 
     if (extracted.poBox) {
-      // Normalize both sides: strip dots/extra spaces before comparing
       const normalize = s => s.toUpperCase().replace(/[.\s]+/g, ' ').trim();
       const labelUpper = normalize(extracted.poFieldLabel || '');
       const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(normalize(v)));
+      const labelForbidden = FORBIDDEN_LABELS.some(v => labelUpper.includes(normalize(v)));
       const valueStr = String(extracted.poBox).trim();
       const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
       const digitsOnly = valueStr.replace(/[^0-9]/g, '');
-      const tooLong = digitsOnly.length > 7; // allow up to 7 digits — blocks ORDER NOs like 17798703
+      const tooLong = digitsOnly.length > 7;
 
-      // Only reject if rawText is present AND contradicts the value
+      // Cross-check: if this value appears in potentialJobFields under a forbidden label,
+      // GPT likely read it from the wrong cell (e.g. ORDER NO or CUSTOMER NO column)
+      const potFields = extracted.potentialJobFields || [];
+      const valueInForbiddenField = potFields.some(f => {
+        const fLabel = normalize(f.label || '');
+        const fValue = String(f.value || '').trim();
+        return FORBIDDEN_LABELS.some(v => fLabel.includes(normalize(v))) && fValue === valueStr;
+      });
+
+      // Only reject rawText mismatch when rawText is present AND contradicts
       const rawText = (extracted.poRawText || '').trim();
       const rawMismatch = rawText
         ? !rawText.replace(/\s/g, '').includes(valueStr.replace(/\s/g, ''))
@@ -311,13 +330,16 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 
       console.log(
         `[extract] PO validation — label:"${extracted.poFieldLabel}" value:"${extracted.poBox}" ` +
-        `labelOk:${labelOk} forbidden:${valueForbidden} tooLong:${tooLong} rawMismatch:${rawMismatch}`
+        `labelOk:${labelOk} labelForbidden:${labelForbidden} forbidden:${valueForbidden} ` +
+        `tooLong:${tooLong} valueInForbiddenField:${valueInForbiddenField} rawMismatch:${rawMismatch}`
       );
 
-      if (!labelOk)        _discardReason = `label "${extracted.poFieldLabel}" not in approved whitelist`;
-      else if (valueForbidden) _discardReason = `value "${valueStr}" is a forbidden account number`;
-      else if (tooLong)    _discardReason = `value "${valueStr}" has too many digits (${digitsOnly.length})`;
-      else if (rawMismatch) _discardReason = `rawText "${rawText}" does not contain value "${valueStr}"`;
+      if (labelForbidden)         _discardReason = `label "${extracted.poFieldLabel}" is a forbidden field type`;
+      else if (!labelOk)          _discardReason = `label "${extracted.poFieldLabel}" not in approved whitelist`;
+      else if (valueForbidden)    _discardReason = `value "${valueStr}" is a forbidden account number`;
+      else if (tooLong)           _discardReason = `value "${valueStr}" has too many digits (${digitsOnly.length})`;
+      else if (valueInForbiddenField) _discardReason = `value "${valueStr}" found in a forbidden field (ORDER NO / CUSTOMER NO) — likely read from wrong cell`;
+      else if (rawMismatch)       _discardReason = `rawText "${rawText}" does not contain value "${valueStr}"`;
 
       if (_discardReason) {
         console.log(`[extract] DISCARDING poBox — reason: ${_discardReason}`);
