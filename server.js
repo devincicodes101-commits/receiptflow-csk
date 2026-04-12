@@ -86,44 +86,56 @@ CRITICAL CONTEXT:
 ════════════════════════════════════════
 JOB NUMBER RULE — READ THIS CAREFULLY
 ════════════════════════════════════════
-Set poBox ONLY when ALL of these are true:
-  1. A field label matching one of the following is physically printed on the document:
-       "YOUR P.O. NO", "YOUR P.O.NO", "P.O. NO", "PO NO", "PO #", "P.O. #",
-       "Purchase Order", "Customer PO", "Job #", "Job No", "Job Number",
-       "Work Order", "W.O.", "W.O. #", "W/O", "W/O #",
-       "Your Reference", "Your Ref", "Your Ref No", "Your Ref #",
-       "Customer Ref", "Customer Reference", "Cust Ref",
-       "Reference", "Ref No", "Ref #",
-       "Contract No", "Contract #", "Project No", "Project #",
-       "Account Ref", "Acct Ref", "Order Ref"
-  2. The cell next to that label has an actual printed value — not blank, not dashes, not empty.
-  3. The value is a short number, 3–5 digits (e.g. 1178, 1249, 1095).
+Look for a field whose printed label is one of:
+  "YOUR P.O. NO", "YOUR P.O.NO", "YOUR PO NO", "YOUR PO #",
+  "P.O. NO", "P.O.NO", "PO NO", "PO #", "PO NUMBER", "PO BOX",
+  "Purchase Order", "Customer PO", "Cust PO",
+  "Job #", "Job No", "Job No.", "Job Number", "Job ID",
+  "Work Order", "Work Order #", "WO", "WO #", "W.O.", "W.O. #", "W/O", "W/O #",
+  "Your Reference", "Your Ref", "Your Ref No", "Your Ref #",
+  "Customer Ref", "Customer Reference", "Cust Ref",
+  "Reference", "Reference No", "Ref", "Ref No", "Ref #", "Ref. No",
+  "Contract No", "Contract #", "Project No", "Project #",
+  "Account Ref", "Acct Ref", "Order Ref", "P/O", "P/O #", "P/O NO"
 
-If ANY condition is not met → poBox: null.
+Look inside tables, grid boxes, and header blocks — the field may appear as a column header
+with its value in a cell directly below or beside it.
+
+Set poBox to the printed value in that cell if:
+  - The cell has an actual value (not blank, not dashes, not empty)
+  - The value is a number (typically 3–7 digits, e.g. 1178, 1249, 1095, 10583)
+
+If no matching label exists OR its cell is blank → poBox: null.
 
 NEVER use these as a job number (always null):
-  ✗ CUSTOMER NO / Account No — e.g. 104625
-  ✗ ORDER NO / Order ID — e.g. 17798703-00 (long, has dashes, 6+ digits)
+  ✗ CUSTOMER NO / Account No — e.g. 104625 (this is CSK Electric's supplier account number)
+  ✗ ORDER NO / Order ID — e.g. 17798703-00 (supplier's own order reference, often 8+ digits or has dashes)
   ✗ INVOICE NO / Document No / Transaction No
   ✗ WAYBILL NO / Tracking No
-  ✗ Any number over 5 digits
+  ✗ Any value with 8 or more digits
+  ✗ Any value containing dashes that make it longer than a plain job number
   ✗ Any value you are guessing or inferring
 
-GESCAN / SONEPAR INVOICES — two-column header box:
-  | CUSTOMER NO  | YOUR P.O. NO |
-  |    104625    |    1178      |
-  - CUSTOMER NO (left) = always 104625 = CSK Electric account. NEVER a job number.
-  - YOUR P.O. NO (right) = job number only if it has a printed value. If blank → null.
+GESCAN / SONEPAR DOCUMENTS (invoices, packing slips, counter sales — ALL types):
+  The top-right header box contains a table with columns such as:
+    | CUSTOMER NO | ORDER NO      | YOUR P.O. NO |
+    |   104625    | 17798703-00   |    1178      |
+  OR sometimes just two columns:
+    | CUSTOMER NO  | YOUR P.O. NO |
+    |    104625    |    1178      |
 
-GESCAN COUNTER SALE / PACKING SLIP:
-  - Header typically shows only CUSTOMER NO and ORDER NO — no "YOUR P.O. NO" column.
-  - If "YOUR P.O. NO" is not printed as a column header → poBox: null.
-  - ORDER NO and CUSTOMER NO are NEVER job numbers.
+  Rules for this box:
+  - CUSTOMER NO cell → always CSK Electric's account (104625). NEVER a job number.
+  - ORDER NO cell → the supplier's order reference. NEVER a job number.
+  - YOUR P.O. NO cell → THIS IS THE JOB NUMBER. Extract its value if non-empty.
+
+  IMPORTANT: YOUR P.O. NO appears on ALL Gescan document types — invoices, packing slips,
+  and counter sales. Do NOT assume it is absent. ALWAYS scan the top-right box for it.
+  If the cell under "YOUR P.O. NO" contains a number like 1178, set poBox = "1178".
 
 IMPORTANT — also populate potentialJobFields:
 List EVERY header/reference field you see on the document (label + value), regardless of whether
-you recognised it as a PO field. Include fields like "YOUR P.O. NO", "ORDER NO", "CUSTOMER NO",
-"WORK ORDER", "REF", "JOB", etc. This helps diagnose missed detections.
+you recognised it as a PO field. Include "YOUR P.O. NO", "ORDER NO", "CUSTOMER NO", etc.
 
 INVOICE DATE:
 - Use the main "Invoice Date" field. Ignore order dates, ship dates.
