@@ -254,14 +254,17 @@ function extractFieldsFromLlama(content) {
 
   // ── 3. Find line items table — scan ALL tables for one with a TOTAL column ──
   let itemsTable = null, totalCol = -1;
+  // Scan ALL rows (not just first 3) — Gescan PDFs embed the items header
+  // rows deep inside a merged table that starts with REFERENCE/GST rows.
+  let itemsHeaderRow = 0;
   for (const table of tables) {
-    for (let r = 0; r < Math.min(3, table.length); r++) {
+    for (let r = 0; r < table.length; r++) {
       const upper = table[r].map(c => c.toUpperCase().trim());
       const tc = upper.findIndex(c => c === 'TOTAL' || c === 'AMOUNT' || c === 'EXT. PRICE' || c === 'EXT PRICE');
       const hasDesc = upper.some(c => c.includes('DESCRIPTION') || c.includes('PRODUCT') || c.includes('ITEM') || c.includes('SERVICE'));
       const hasPrice = upper.some(c => c.includes('PRICE') || c === 'RATE' || c === 'AMOUNT');
       if (tc >= 0 && (hasDesc || hasPrice)) {
-        itemsTable = table; totalCol = tc;
+        itemsTable = table; totalCol = tc; itemsHeaderRow = r;
         break;
       }
     }
@@ -273,7 +276,8 @@ function extractFieldsFromLlama(content) {
   let lastDesc = ''; // carry forward description for multi-row item formats
 
   if (itemsTable && totalCol >= 0) {
-    for (const row of itemsTable) {
+    for (let ri = itemsHeaderRow + 1; ri < itemsTable.length; ri++) {
+      const row = itemsTable[ri];
       // Numeric parser: strip $, commas, and trailing sign (e.g. "721.35 -" for returns)
       const parseNum = (cell) => {
         const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
