@@ -87,7 +87,7 @@ function extractFieldsFromLlama(content) {
       const rows = [];
       for (const [rowHtml] of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
         const cells = [];
-        for (const [, inner] of rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
+        for (const [, inner] of rowHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
           const text = inner
             .replace(/<br\s*\/?>/gi, ' ')
             .replace(/<[^>]+>/g, '')
@@ -212,17 +212,15 @@ function extractFieldsFromLlama(content) {
   }
 
   // ── 3. Find line items table — scan ALL tables for one with a TOTAL column ──
-  let itemsTable = null, totalCol = -1, priceCol = -1, descCol = 1;
+  let itemsTable = null, totalCol = -1;
   for (const table of tables) {
     for (let r = 0; r < Math.min(3, table.length); r++) {
       const upper = table[r].map(c => c.toUpperCase().trim());
       const tc = upper.findIndex(c => c === 'TOTAL' || c === 'AMOUNT' || c === 'EXT. PRICE' || c === 'EXT PRICE');
-      const dc = upper.findIndex(c => c.includes('DESCRIPTION') || c.includes('PRODUCT') || c.includes('ITEM') || c.includes('SERVICE'));
-      const pc = upper.findIndex(c => c.includes('UNIT PRICE') || c.includes('NET PRICE') || c === 'PRICE' || c === 'RATE');
-      if (tc >= 0 && (dc >= 0 || pc >= 0)) {
+      const hasDesc = upper.some(c => c.includes('DESCRIPTION') || c.includes('PRODUCT') || c.includes('ITEM') || c.includes('SERVICE'));
+      const hasPrice = upper.some(c => c.includes('PRICE') || c === 'RATE' || c === 'AMOUNT');
+      if (tc >= 0 && (hasDesc || hasPrice)) {
         itemsTable = table; totalCol = tc;
-        if (dc >= 0) descCol  = dc;
-        if (pc >= 0) priceCol = pc;
         break;
       }
     }
@@ -234,67 +232,56 @@ function extractFieldsFromLlama(content) {
 
   if (itemsTable && totalCol >= 0) {
     let sum = 0;
-    let i = 0;
-    // Skip header rows (rows before first data row that contain no prices)
-    while (i < itemsTable.length) {
-      const row = itemsTable[i];
-      const hasPrice = row.some(c => /^\d+\.\d{2}$/.test(c));
-      if (hasPrice) break;
-      i++;
-    }
 
-    while (i < itemsTable.length) {
-      const row = itemsTable[i];
-      if (row.length <= totalCol) { i++; continue; }
-
-      const totalCell = row[totalCol] || '';
-      const lineTotal = parseFloat(totalCell.replace(/[$,]/g, ''));
-      const desc = row[descCol] || '';
+    for (const row of itemsTable) {
+      // Collect all numeric values from the row (in order, right to left for total finding)
+      const nums = [];
+      for (const cell of row) {
+        const n = parseFloat((cell || '').replace(/[$,]/g, ''));
+        if (!isNaN(n) && n > 0) nums.push(n);
+      }
+      // Skip header rows and empty rows (no prices at all)
+      if (nums.length === 0) continue;
 
       const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
 
-      // A data row must have a non-zero numeric total
-      if (!isNaN(lineTotal) && lineTotal > 0 && !isFee) {
-        const netPrice = priceCol >= 0 ? parseFloat((row[priceCol] || '').replace(/[$,]/g,'')) : null;
-        const lineNo = row[0] || '';
-
-        // Qty: find first small positive integer in the row (skip the line number col)
-        let qty = null;
-        for (let q = 1; q < row.length; q++) {
-          if (q === totalCol || q === priceCol) continue;
-          const n = parseInt(row[q]);
-          if (!isNaN(n) && n > 0 && n < 10000 && /^\d+$/.test(row[q].trim())) {
-            qty = n; break;
-          }
-        }
-        // If no qty in this row, check next row
-        if (qty === null) {
-          const nextRow = itemsTable[i + 1] || [];
-          for (let q = 0; q < Math.min(4, nextRow.length); q++) {
-            const n = parseInt(nextRow[q]);
-            if (!isNaN(n) && n > 0 && /^\d+$/.test(nextRow[q].trim())) {
-              qty = n; break;
-            }
-          }
-        }
-
-        if (desc.length > 1) {
-          items.push({ lineNo, desc, qty, unit: isNaN(netPrice) ? null : netPrice, total: lineTotal });
-          sum += lineTotal;
-        }
-      } else if (isFee) {
+      if (isFee) {
+        // Fee row — last price = total fee
+        const feeTotal = nums[nums.length - 1];
         const feeLabel = row.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
-        let feeTotal = null;
-        for (let k = row.length - 1; k >= 0; k--) {
-          const n = parseFloat((row[k] || '').replace(/[$,]/g,''));
-          if (!isNaN(n) && n > 0) { feeTotal = n; break; }
-        }
-        if (feeTotal !== null) {
-          items.push({ lineNo: '', desc: feeLabel, qty: null, unit: null, total: feeTotal });
-          sum += feeTotal;
+        items.push({ lineNo: '', desc: feeLabel, qty: null, unit: null, total: feeTotal });
+        sum += feeTotal;
+        continue;
+      }
+
+      // Regular item row — last price is the line total, second-to-last is net price
+      const lineTotal = nums[nums.length - 1];
+      const netPrice  = nums.length >= 2 ? nums[nums.length - 2] : null;
+      const lineNo    = row[0] || '';
+
+      // Description: longest text cell that isn't purely numeric
+      let desc = '';
+      for (const cell of row) {
+        // Strip trailing number (e.g. "CVR CLG BOX BLANK 6" → "CVR CLG BOX BLANK")
+        const cleaned = cell.replace(/\s+\d+$/, '').trim();
+        const isNumeric = /^\$?[\d,.]+$/.test(cleaned) || cleaned.length === 0;
+        if (!isNumeric && cleaned.length > desc.length) desc = cleaned;
+      }
+
+      // Qty: last standalone integer in the row (≤4 digits, not the line number)
+      let qty = null;
+      for (let c = row.length - 1; c >= 1; c--) {
+        const m = (row[c] || '').match(/(\d{1,4})$/);
+        if (m) {
+          const n = parseInt(m[1]);
+          if (n > 0 && n < 10000 && n !== parseFloat(lineTotal)) { qty = n; break; }
         }
       }
-      i++;
+
+      if (lineTotal > 0 && desc.length > 1) {
+        items.push({ lineNo, desc, qty, unit: netPrice, total: lineTotal });
+        sum += lineTotal;
+      }
     }
 
     if (isContinued && sum > 0) {
