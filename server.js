@@ -80,10 +80,12 @@ function extractFieldsFromLlama(content) {
   let vendor = null, invoiceNo = null, date = null, jobNo = null, total = null;
   const items = [];
 
-  // ── Helper: parse all HTML tables into [table][row][col] = text ──
-  function parseTables(html) {
+  // ── Helper: parse all tables (HTML + markdown pipe) into [table][row][col] ──
+  function parseTables(content) {
     const tbls = [];
-    for (const [tableHtml] of html.matchAll(/<table[\s\S]*?<\/table>/gi)) {
+
+    // 1. HTML <table> blocks
+    for (const [tableHtml] of content.matchAll(/<table[\s\S]*?<\/table>/gi)) {
       const rows = [];
       for (const [rowHtml] of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
         const cells = [];
@@ -99,6 +101,29 @@ function extractFieldsFromLlama(content) {
       }
       if (rows.length) tbls.push(rows);
     }
+
+    // 2. Markdown pipe tables  e.g.  | A | B | C |
+    //    LlamaParse renders some footer/totals tables this way instead of as HTML.
+    //    Group consecutive pipe-table lines into blocks, skip alignment rows (| :--- |).
+    const htmlZapped = content.replace(/<table[\s\S]*?<\/table>/gi, ''); // avoid double-counting
+    const pipeLines = htmlZapped.split('\n');
+    let mdBlock = [];
+    const flushMdBlock = () => {
+      if (mdBlock.length >= 2) tbls.push(mdBlock);
+      mdBlock = [];
+    };
+    for (const line of pipeLines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|')) { flushMdBlock(); continue; }
+      // Skip alignment rows like | :--- | :--: | ---: |
+      if (/^\|[\s|:-]+\|$/.test(trimmed)) continue;
+      const cells = trimmed.replace(/^\||\|$/g, '').split('|')
+        .map(c => c.trim())
+        .filter((_, i, arr) => i < arr.length); // keep all including empty
+      if (cells.some(c => c.length > 0)) mdBlock.push(cells);
+    }
+    flushMdBlock();
+
     return tbls;
   }
 
