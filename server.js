@@ -178,9 +178,16 @@ function extractFieldsFromLlama(content) {
 
   // ── 2. Extract key fields from label map ──
 
-  // Vendor: bold heading first, then look for common vendor labels
+  // Vendor: H1/H2 heading first (e.g. "# GESCAN"), then bold text, then label map
+  // Avoid capturing section headers like "INVOICE" or "RETURN MERCHANDISE" as vendor —
+  // skip any heading that is a known doc-type keyword
+  const DOC_KEYWORDS = /^(invoice|receipt|packing\s*slip|counter\s*sale|return|original|copy|statement|order|quote|estimate|bill)/i;
+  const headingMatch = [...content.matchAll(/^#{1,2}\s+([A-Za-z][A-Za-z0-9\s&.,'()-]+?)$/gm)]
+    .map(m => m[1].trim())
+    .find(h => !DOC_KEYWORDS.test(h));
   const boldMatch = content.match(/\*\*([A-Za-z][A-Za-z\s&.-]+?)\*\*/);
-  vendor = boldMatch?.[1]?.trim() ||
+  vendor = headingMatch ||
+    (boldMatch?.[1]?.trim() && !DOC_KEYWORDS.test(boldMatch[1]) ? boldMatch[1].trim() : null) ||
     lmap['VENDOR'] || lmap['SUPPLIER'] || lmap['COMPANY'] ||
     lmap['SOLD BY'] || lmap['BILLED BY'] || null;
 
@@ -190,11 +197,11 @@ function extractFieldsFromLlama(content) {
     lmap['INVOICE #'] || lmap['ORDER NUMBER'] || lmap['DOCUMENT NO'] ||
     lmap['RECEIPT NO'] || lmap['RECEIPT NUMBER'] || lmap['TRANSACTION NO'] || null;
 
-  // Date — try many label variants, then fall back to first date found anywhere
+  // Date — prefer INVOICE DATE over ORDER DATE (order date may differ by a day)
   const rawDate =
-    lmap['ORDER DATE'] || lmap['INVOICE DATE'] || lmap['DATE'] ||
-    lmap['TRANSACTION DATE'] || lmap['BILL DATE'] || lmap['SALE DATE'] ||
-    lmap['RECEIPT DATE'] || lmap['ISSUED'] || null;
+    lmap['INVOICE DATE'] || lmap['DATE'] || lmap['TRANSACTION DATE'] ||
+    lmap['BILL DATE'] || lmap['SALE DATE'] || lmap['RECEIPT DATE'] ||
+    lmap['ISSUED'] || lmap['ORDER DATE'] || null;
   date = parseDate(rawDate);
   if (!date) {
     const anyDate = content.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/);
@@ -234,29 +241,29 @@ function extractFieldsFromLlama(content) {
   }
 
   // ── 4. Parse line items + compute total ──
-  const isContinued = tables.some(t => t.some(r => r.some(c => /continued/i.test(c))));
+  let itemsSum = 0;
+  let lastDesc = ''; // carry forward description for multi-row item formats
 
   if (itemsTable && totalCol >= 0) {
-    let sum = 0;
-
     for (const row of itemsTable) {
-      // Collect all numeric values from the row (in order, right to left for total finding)
-      const nums = [];
-      for (const cell of row) {
-        const n = parseFloat((cell || '').replace(/[$,]/g, ''));
-        if (!isNaN(n) && n > 0) nums.push(n);
-      }
-      // Skip header rows and empty rows (no prices at all)
+      // Numeric parser: strip $, commas, and trailing sign (e.g. "721.35 -" for returns)
+      const parseNum = (cell) => {
+        const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
+        const n = parseFloat(s);
+        return (!isNaN(n) && n > 0) ? n : null;
+      };
+
+      // Collect all positive numeric values from the row
+      const nums = row.map(parseNum).filter(n => n !== null);
       if (nums.length === 0) continue;
 
       const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
 
       if (isFee) {
-        // Fee row — last price = total fee
         const feeTotal = nums[nums.length - 1];
         const feeLabel = row.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
         items.push({ lineNo: '', desc: feeLabel, qty: null, unit: null, total: feeTotal });
-        sum += feeTotal;
+        itemsSum += feeTotal;
         continue;
       }
 
@@ -265,51 +272,57 @@ function extractFieldsFromLlama(content) {
       const netPrice  = nums.length >= 2 ? nums[nums.length - 2] : null;
       const lineNo    = row[0] || '';
 
-      // Description: longest text cell that isn't purely numeric
+      // Description: longest text cell that isn't a number or unit-of-measure
+      // Also treat "VALUE -" style cells (trailing sign) as numeric, not text
       let desc = '';
       for (const cell of row) {
-        // Strip trailing number (e.g. "CVR CLG BOX BLANK 6" → "CVR CLG BOX BLANK")
-        const cleaned = cell.replace(/\s+\d+$/, '').trim();
-        const isNumeric = /^\$?[\d,.]+$/.test(cleaned) || cleaned.length === 0;
+        const cleaned = cell.replace(/\s+\d+$/, '').replace(/\s*[-+]\s*$/, '').trim();
+        const isNumeric = /^\$?[\d,.]+$/.test(cleaned) || cleaned.length === 0 ||
+                          /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN)$/i.test(cleaned);
         if (!isNumeric && cleaned.length > desc.length) desc = cleaned;
       }
 
-      // Qty: last standalone integer in the row (≤4 digits, not the line number)
+      // If this row has no description but looks like the price row of a multi-row item,
+      // reuse the last description we saw (e.g. Gescan invoice splits desc/prices across rows)
+      if (!desc && lastDesc) desc = lastDesc;
+      if (desc) lastDesc = desc;
+
+      // Qty: last standalone integer in the row (≤4 digits)
       let qty = null;
       for (let c = row.length - 1; c >= 1; c--) {
         const m = (row[c] || '').match(/(\d{1,4})$/);
         if (m) {
           const n = parseInt(m[1]);
-          if (n > 0 && n < 10000 && n !== parseFloat(lineTotal)) { qty = n; break; }
+          if (n > 0 && n < 10000 && n !== Math.round(lineTotal)) { qty = n; break; }
         }
       }
 
       if (lineTotal > 0 && desc.length > 1) {
         items.push({ lineNo, desc, qty, unit: netPrice, total: lineTotal });
-        sum += lineTotal;
+        itemsSum += lineTotal;
       }
-    }
-
-    if (isContinued && sum > 0) {
-      total = Math.round(sum * 100) / 100;
     }
   }
 
-  // ── 5. Total fallback — label map then any obvious "TOTAL $X.XX" line ──
+  // ── 5. Total fallback — label map → text scan → items sum ──
   if (total === null) {
     const rawTotal =
       lmap['TOTAL'] || lmap['GRAND TOTAL'] || lmap['INVOICE TOTAL'] ||
       lmap['AMOUNT DUE'] || lmap['BALANCE DUE'] || lmap['TOTAL DUE'] ||
       lmap['SUBTOTAL'] || null;
     if (rawTotal) {
-      const n = parseFloat(rawTotal.replace(/[$,]/g, ''));
-      if (!isNaN(n)) total = n;
+      // Strip trailing sign (e.g. "721.35 -" on return invoices)
+      const n = parseFloat(rawTotal.replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
+      if (!isNaN(n) && n > 0) total = n;
     }
   }
   if (total === null) {
-    // Scan plain text for patterns like "Total $279.62" or "TOTAL: 279.62"
     const tm = content.match(/\bTOTAL\b[\s:$]*(\d[\d,]*\.\d{2})/i);
     if (tm) total = parseFloat(tm[1].replace(/,/g,''));
+  }
+  // Last resort: sum what we parsed from line items
+  if (total === null && itemsSum > 0) {
+    total = Math.round(itemsSum * 100) / 100;
   }
 
   console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total, itemCount: items.length });
