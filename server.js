@@ -149,13 +149,19 @@ function extractFieldsFromLlama(content) {
       }
 
       // Style B: side-by-side — "Label" | "Value" in same row
-      for (let c = 0; c + 1 < row.length; c++) {
-        const lbl = row[c].replace(/:$/, '').toUpperCase().replace(/\s+/g,' ').trim();
-        const val = row[c + 1].trim();
-        if (/^[A-Z][A-Z\s./()#-]{2,}$/.test(lbl) && val &&
-            !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val) && val !== lbl) {
-          lmap[lbl] = val;
-          c++; // consumed the value cell
+      // Skip pure header rows (all cells are label-like) — those belong to Style A only,
+      // and running Style B on them causes header cells to overwrite real values
+      // e.g. [ORDER DATE, ORDER NO, PAGE] would set lmap['ORDER NO'] = 'PAGE'
+      const rowIsAllLabels = row.every(c => c === '' || /^[A-Z][A-Z\s./()#-]{2,}$/.test(c));
+      if (!rowIsAllLabels) {
+        for (let c = 0; c + 1 < row.length; c++) {
+          const lbl = row[c].replace(/:$/, '').toUpperCase().replace(/\s+/g,' ').trim();
+          const val = row[c + 1].trim();
+          if (/^[A-Z][A-Z\s./()#-]{2,}$/.test(lbl) && val &&
+              !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val) && val !== lbl) {
+            lmap[lbl] = val;
+            c++; // consumed the value cell
+          }
         }
       }
     }
