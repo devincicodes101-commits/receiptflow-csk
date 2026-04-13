@@ -648,6 +648,34 @@ function reviewHTML() {
                     </div>
                 </div>
 
+                <!-- Line Items Table -->
+                ${(r.items && r.items.length > 0) ? `
+                <div style="margin-bottom:14px;">
+                    <label class="form-label">Line Items <span style="font-weight:400;color:#9CA3AF;">(${r.items.length} items)</span></label>
+                    <div class="table-scroll" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;max-height:220px;overflow-y:auto;">
+                        <table class="data-table" style="font-size:12px;width:100%;">
+                            <thead>
+                                <tr>
+                                    <th style="padding:6px 8px;">#</th>
+                                    <th style="padding:6px 8px;">Description</th>
+                                    <th style="padding:6px 8px;text-align:center;width:45px;">Qty</th>
+                                    <th style="padding:6px 8px;text-align:right;width:75px;">Unit</th>
+                                    <th style="padding:6px 8px;text-align:right;width:75px;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            ${r.items.map(item => `<tr>
+                                <td style="padding:5px 8px;color:#9CA3AF;font-size:11px;">${escHtml(item.lineNo || '')}</td>
+                                <td style="padding:5px 8px;font-size:11.5px;">${escHtml(item.desc || '')}</td>
+                                <td style="padding:5px 8px;text-align:center;color:#6B7280;">${item.qty != null ? item.qty : '—'}</td>
+                                <td style="padding:5px 8px;text-align:right;color:#6B7280;font-variant-numeric:tabular-nums;">${item.unit != null ? fmt(item.unit) : '—'}</td>
+                                <td style="padding:5px 8px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${item.total != null ? fmt(item.total) : '—'}</td>
+                            </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>` : ''}
+
                 <div style="margin-bottom:14px;">
                     <label class="form-label">Expense Category</label>
                     <select class="form-input" id="f-category">

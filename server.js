@@ -137,49 +137,81 @@ function extractFieldsFromLlama(content) {
     if (dm) date = `${dm[3]}-${dm[1].padStart(2, '0')}-${dm[2].padStart(2, '0')}`;
   }
 
-  // Total — check if last table says "Continued" (multi-page); if so, sum line items
+  // ── Line items + total ──
   const lastTable = tables[tables.length - 1] || [];
   const isContinued = lastTable.some(row => row.some(c => /continued/i.test(c)));
+  const items = [];
 
-  if (isContinued && tables.length >= 3) {
-    // Line items are in table index 2; find the TOTAL column from header row
+  if (tables.length >= 3) {
     const itemsTable = tables[2];
-    let totalColIdx = 6; // Gescan default
+
+    // Find column indexes from the header row
+    let totalColIdx = 6, netPriceColIdx = 5, uomColIdx = 3;
     for (const row of itemsTable.slice(0, 2)) {
-      const idx = row.findIndex(c => c.toUpperCase() === 'TOTAL');
-      if (idx >= 0) { totalColIdx = idx; break; }
+      const upper = row.map(c => c.toUpperCase());
+      const ti = upper.indexOf('TOTAL');
+      const ni = upper.findIndex(c => c.includes('NET PRICE') || c === 'PRICE');
+      const ui = upper.findIndex(c => c === 'U/M' || c === 'UOM' || c === 'UNIT');
+      if (ti >= 0) totalColIdx    = ti;
+      if (ni >= 0) netPriceColIdx = ni;
+      if (ui >= 0) uomColIdx      = ui;
     }
+
     let sum = 0;
-    for (const row of itemsTable) {
-      if (row.length <= totalColIdx) continue;
-      const uom = (row[3] || '').toUpperCase();
-      // Regular product row — U/M cell contains a unit abbreviation
+    let i = 0;
+    while (i < itemsTable.length) {
+      const row = itemsTable[i];
+      const uom = (row[uomColIdx] || '').toUpperCase();
+
+      // Product row: has a U/M abbreviation in the U/M column
       if (/^(EA|EACH|PC|PCS|PR|FT|M|BX|BOX|ROLL|RL|SET|BAG|LF|LB)$/.test(uom)) {
-        const n = parseFloat(row[totalColIdx]);
-        if (!isNaN(n) && n > 0) sum += n;
+        const lineNo  = row[0] || '';
+        const desc    = row[1] || '';   // "ARLCP3540 CVR CLG BOX BLANK PLASTIC WHI"
+        const netPrice = parseFloat(row[netPriceColIdx]) || null;
+        const lineTotal = parseFloat(row[totalColIdx]);
+
+        // Qty comes from the immediately following qty row (col 1 = qty shipped, col 2 = qty ordered)
+        const nextRow = itemsTable[i + 1] || [];
+        const qty = parseInt(nextRow[2] || nextRow[1]) || null; // shipped qty preferred
+
+        items.push({ lineNo, desc, qty, unit: netPrice, total: isNaN(lineTotal) ? null : lineTotal });
+        if (!isNaN(lineTotal) && lineTotal > 0) sum += lineTotal;
+        i += 2; // skip the qty row
+        continue;
       }
-      // Fee/surcharge row (ECO Fee etc.) — grab the last non-empty numeric cell
-      else if (row.some(c => /fee|surcharge|eco|levy/i.test(c))) {
-        for (let i = row.length - 1; i >= 0; i--) {
-          const n = parseFloat(row[i]);
-          if (!isNaN(n) && n > 0) { sum += n; break; }
+
+      // Fee row (ECO Fee, Surcharge, etc.)
+      if (row.some(c => /fee|surcharge|eco|levy/i.test(c))) {
+        const label = row.find(c => /fee|surcharge|eco|levy/i.test(c)) || 'Fee';
+        let feeTotal = null;
+        for (let k = row.length - 1; k >= 0; k--) {
+          const n = parseFloat(row[k]);
+          if (!isNaN(n) && n > 0) { feeTotal = n; break; }
+        }
+        if (feeTotal !== null) {
+          items.push({ lineNo: '', desc: label, qty: null, unit: null, total: feeTotal });
+          sum += feeTotal;
         }
       }
+      i++;
     }
-    if (sum > 0) total = Math.round(sum * 100) / 100;
-  } else {
-    // Single-page receipt — read actual total from last table's last numeric cell
-    for (const row of [...lastTable].reverse()) {
-      for (const cell of [...row].reverse()) {
-        const n = parseFloat(cell);
-        if (!isNaN(n) && n > 0) { total = n; break; }
+
+    if (isContinued) {
+      total = sum > 0 ? Math.round(sum * 100) / 100 : null;
+    } else {
+      // Read actual total from last table
+      for (const row of [...lastTable].reverse()) {
+        for (const cell of [...row].reverse()) {
+          const n = parseFloat(cell);
+          if (!isNaN(n) && n > 0) { total = n; break; }
+        }
+        if (total !== null) break;
       }
-      if (total !== null) break;
     }
   }
 
-  console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total });
-  return { vendor, invoiceNo, date, jobNo, total };
+  console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total, itemCount: items.length });
+  return { vendor, invoiceNo, date, jobNo, total, items };
 }
 
 // ── LlamaParse helper — uploads file, polls until done, returns text ──
@@ -307,7 +339,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         total:     fields.total     || null,
         jobNo:     fields.jobNo     || null,
         jobStatus: fields.jobNo ? 'found' : 'missing',
-        items: [],
+        items:     fields.items    || [],
       }
     });
 
