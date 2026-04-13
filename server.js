@@ -74,15 +74,19 @@ const upload = multer({
 });
 
 
-// ── LlamaParse helper — uploads file, polls until done, returns markdown ──
+// ── LlamaParse helper — uploads file, polls until done, returns text ──
 async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
   const LLAMA_KEY = process.env.LLAMA_CLOUD_API_KEY;
   if (!LLAMA_KEY) throw new Error('LLAMA_CLOUD_API_KEY not set');
 
-  // Upload the file
+  // Upload with premium_mode + HTML tables for best cell-level accuracy.
+  // Gescan receipts have a two-row header box; premium_mode handles this better.
   const form = new FormData();
   const blob = new Blob([fileBuffer], { type: mimeType });
   form.append('file', blob, filename || 'receipt');
+  form.append('premium_mode', 'true');
+  form.append('output_tables_as_HTML', 'true');
+  form.append('language', 'en');
 
   const uploadRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', {
     method: 'POST',
@@ -98,9 +102,9 @@ async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
   const { id: jobId } = await uploadRes.json();
   console.log('[llamaparse] job started:', jobId);
 
-  // Poll every 1 second for up to 60 seconds
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 1000));
+  // Poll every 2 seconds for up to 60 seconds (premium mode takes a bit longer)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000));
 
     const statusRes = await fetch(
       `https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}`,
@@ -110,12 +114,25 @@ async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
     console.log('[llamaparse] poll', i + 1, '— status:', statusData.status);
 
     if (statusData.status === 'SUCCESS') {
-      const resultRes = await fetch(
-        `https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`,
-        { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }
-      );
-      const resultData = await resultRes.json();
-      return resultData.markdown || '';
+      // Fetch both markdown and raw text, then combine so we don't miss any data.
+      // Markdown has table structure; raw text has plain cell values as a fallback.
+      const [mdRes, txtRes] = await Promise.all([
+        fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`,
+          { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }),
+        fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/raw/text`,
+          { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }),
+      ]);
+      const mdData  = await mdRes.json();
+      const txtData = await txtRes.json().catch(() => ({}));
+
+      const markdown = mdData.markdown || '';
+      const rawText  = txtData.content  || txtData.text || txtData.raw_text || '';
+
+      console.log('[llamaparse] markdown preview:', markdown.substring(0, 300));
+      console.log('[llamaparse] raw text preview:', rawText.substring(0, 300));
+
+      // Return both so the UI can show everything LlamaParse found
+      return markdown + (rawText ? '\n\n---RAW TEXT---\n' + rawText : '');
     }
 
     if (statusData.status === 'ERROR') {
