@@ -217,11 +217,14 @@ function extractFieldsFromLlama(content) {
     'YOUR REF', 'YOUR REFERENCE', 'CUSTOMER REF', 'REF NO',
   ];
   for (const lbl of JOB_LABELS) {
-    const val = lmap[lbl];
-    if (val) {
-      const m = val.trim().match(/^(\d{3,7})$/);
-      if (m) { jobNo = m[1]; break; }
-    }
+    const val = (lmap[lbl] || '').trim();
+    if (!val) continue;
+    // Exact digits: "1178", "12345"
+    let m = val.match(/^(\d{3,7})$/);
+    if (m) { jobNo = m[1]; break; }
+    // Digits with suffix: "1391-RETURN", "1178-A", "1178 REV"
+    m = val.match(/^(\d{3,7})[-\s]/);
+    if (m) { jobNo = m[1]; break; }
   }
 
   // ── 3. Find line items table — scan ALL tables for one with a TOTAL column ──
@@ -255,7 +258,19 @@ function extractFieldsFromLlama(content) {
 
       // Collect all positive numeric values from the row
       const nums = row.map(parseNum).filter(n => n !== null);
-      if (nums.length === 0) continue;
+
+      // Even if this row has no numbers (pure description row), capture the description
+      // so the NEXT row (which has prices but no desc) can inherit it.
+      // Gescan invoices split: row N = "line# | desc", row N+1 = "| qty | price | total"
+      if (nums.length === 0) {
+        for (const cell of row) {
+          const cleaned = cell.replace(/\*\*\d+\*\*\s*/g, '') // strip **1** line markers
+                              .replace(/\s+\d+$/, '').trim();
+          const isHeader = /^(LINE|QTY|PRODUCT|DESCRIPTION|PRICE|TOTAL|AMOUNT|UNIT|U\/M|DISCOUNT|SHIPPED|ORDERED|BACKORDERED|UPC|LIST|REFERENCE|REFERENCE|REP|C\.O\.D|TAKEN BY|ORIGINAL INVOICE|SEE NOTES)/i.test(cleaned);
+          if (!isHeader && cleaned.length > 4 && cleaned.length > lastDesc.length) lastDesc = cleaned;
+        }
+        continue;
+      }
 
       const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
 
