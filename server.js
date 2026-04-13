@@ -75,139 +75,248 @@ const upload = multer({
 
 
 // ── Parse structured fields from LlamaParse HTML+markdown output ──
+// Works with any receipt layout — Gescan, Home Depot, AI-generated, etc.
 function extractFieldsFromLlama(content) {
   let vendor = null, invoiceNo = null, date = null, jobNo = null, total = null;
+  const items = [];
 
-  // Vendor: first **BOLD** heading in the markdown section
-  const boldMatch = content.match(/\*\*([A-Za-z][A-Za-z\s&.-]+?)\*\*/);
-  if (boldMatch) vendor = boldMatch[1].trim();
-
-  // Parse all HTML tables → array of [table][row][col] = cellText
-  const tables = [];
-  for (const [tableHtml] of content.matchAll(/<table[\s\S]*?<\/table>/gi)) {
-    const rows = [];
-    for (const [rowHtml] of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
-      const cells = [];
-      for (const [, inner] of rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
-        const text = inner
-          .replace(/<br\s*\/?>/gi, ' ')
-          .replace(/<[^>]+>/g, '')
-          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-          .replace(/\s+/g, ' ').trim();
-        cells.push(text);
+  // ── Helper: parse all HTML tables into [table][row][col] = text ──
+  function parseTables(html) {
+    const tbls = [];
+    for (const [tableHtml] of html.matchAll(/<table[\s\S]*?<\/table>/gi)) {
+      const rows = [];
+      for (const [rowHtml] of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
+        const cells = [];
+        for (const [, inner] of rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
+          const text = inner
+            .replace(/<br\s*\/?>/gi, ' ')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/\s+/g, ' ').trim();
+          cells.push(text);
+        }
+        if (cells.some(c => c.length > 0)) rows.push(cells);
       }
-      if (cells.some(c => c.length > 0)) rows.push(cells);
+      if (rows.length) tbls.push(rows);
     }
-    if (rows.length) tables.push(rows);
+    return tbls;
   }
 
-  // Build label→value map from the first 2 tables (header info box)
-  // In Gescan documents, each pair of rows = labels row then values row
+  // ── Helper: normalise a date string → YYYY-MM-DD ──
+  function parseDate(str) {
+    if (!str) return null;
+    // Already ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    // MM/DD/YYYY or DD/MM/YYYY
+    let m = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+    // YYYY/MM/DD
+    m = str.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    return null;
+  }
+
+  const tables = parseTables(content);
+
+  // ── 1. Build a flat label→value map from EVERY table ──
+  // Handles both Gescan-style (label row / value row) and
+  // side-by-side style (label cell | value cell in same row)
   const lmap = {};
-  for (const table of tables.slice(0, 2)) {
-    for (let r = 0; r + 1 < table.length; r++) {
-      const lRow = table[r];
-      const vRow = table[r + 1] || [];
-      // A label row contains mostly uppercase letter strings — no dates, no long numbers
-      const isLabelRow = lRow.some(c => /^[A-Z][A-Z\s./()-]{2,}$/.test(c)) &&
-                         !lRow.some(c => /^\d{2}\/\d{2}\/\d{4}$/.test(c));
-      if (isLabelRow) {
-        for (let c = 0; c < lRow.length; c++) {
-          const lbl = lRow[c].toUpperCase().replace(/\s+/g, ' ').trim();
-          const val = (vRow[c] || '').trim();
-          if (lbl.length > 1 && val.length > 0) lmap[lbl] = val;
+
+  for (const table of tables) {
+    for (let r = 0; r < table.length; r++) {
+      const row = table[r];
+
+      // Style A: label row + value row (alternate rows pattern)
+      if (r + 1 < table.length) {
+        const vRow = table[r + 1];
+        const isLabelRow =
+          row.some(c => /^[A-Z][A-Z\s./()#-]{2,}$/.test(c)) &&          // has label-like text
+          !row.some(c => /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(c)) &&   // no dates
+          !row.some(c => /^\d+\.\d{2}$/.test(c));                         // no prices
+        const isValueRow =
+          vRow.some(c => c.length > 0) &&
+          !vRow.every(c => /^[A-Z][A-Z\s./()#-]{2,}$/.test(c) || c === ''); // not all labels
+
+        if (isLabelRow && isValueRow) {
+          for (let c = 0; c < row.length; c++) {
+            const lbl = row[c].toUpperCase().replace(/\s+/g,' ').trim();
+            const val = (vRow[c] || '').trim();
+            if (lbl.length > 1 && val && !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val))
+              lmap[lbl] = val;
+          }
+        }
+      }
+
+      // Style B: side-by-side — "Label" | "Value" in same row
+      for (let c = 0; c + 1 < row.length; c++) {
+        const lbl = row[c].replace(/:$/, '').toUpperCase().replace(/\s+/g,' ').trim();
+        const val = row[c + 1].trim();
+        if (/^[A-Z][A-Z\s./()#-]{2,}$/.test(lbl) && val &&
+            !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val) && val !== lbl) {
+          lmap[lbl] = val;
+          c++; // consumed the value cell
         }
       }
     }
   }
-  console.log('[fields] label map:', JSON.stringify(lmap));
 
-  // Invoice number
-  invoiceNo = lmap['ORDER NO'] || lmap['INVOICE NO'] || lmap['INVOICE NUMBER'] || null;
-
-  // Job number — only accept 3–7 digit values
-  const rawJob = lmap['YOUR P.O. NO'] || lmap['YOUR P.O.NO'] || lmap['P.O. NO'] ||
-                 lmap['PO NO'] || lmap['PO #'] || null;
-  if (rawJob && /^\d{3,7}$/.test(rawJob.trim())) jobNo = rawJob.trim();
-
-  // Date — convert MM/DD/YYYY → YYYY-MM-DD
-  const rawDate = lmap['ORDER DATE'] || lmap['INVOICE DATE'] || lmap['DATE'] || null;
-  if (rawDate) {
-    const dm = rawDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (dm) date = `${dm[3]}-${dm[1].padStart(2, '0')}-${dm[2].padStart(2, '0')}`;
+  // Also scan plain text outside tables for "Label: Value" on same line
+  const plainText = content.replace(/<table[\s\S]*?<\/table>/gi, '');
+  for (const [, lbl, val] of plainText.matchAll(/^([A-Z][A-Za-z\s./()#-]{2,}?)\s*:\s*(.+)$/gm)) {
+    const k = lbl.toUpperCase().replace(/\s+/g,' ').trim();
+    if (k && val.trim()) lmap[k] = val.trim();
   }
 
-  // ── Line items + total ──
-  const lastTable = tables[tables.length - 1] || [];
-  const isContinued = lastTable.some(row => row.some(c => /continued/i.test(c)));
-  const items = [];
+  console.log('[fields] label map:', JSON.stringify(lmap));
 
-  if (tables.length >= 3) {
-    const itemsTable = tables[2];
+  // ── 2. Extract key fields from label map ──
 
-    // Find column indexes from the header row
-    let totalColIdx = 6, netPriceColIdx = 5, uomColIdx = 3;
-    for (const row of itemsTable.slice(0, 2)) {
-      const upper = row.map(c => c.toUpperCase());
-      const ti = upper.indexOf('TOTAL');
-      const ni = upper.findIndex(c => c.includes('NET PRICE') || c === 'PRICE');
-      const ui = upper.findIndex(c => c === 'U/M' || c === 'UOM' || c === 'UNIT');
-      if (ti >= 0) totalColIdx    = ti;
-      if (ni >= 0) netPriceColIdx = ni;
-      if (ui >= 0) uomColIdx      = ui;
+  // Vendor: bold heading first, then look for common vendor labels
+  const boldMatch = content.match(/\*\*([A-Za-z][A-Za-z\s&.-]+?)\*\*/);
+  vendor = boldMatch?.[1]?.trim() ||
+    lmap['VENDOR'] || lmap['SUPPLIER'] || lmap['COMPANY'] ||
+    lmap['SOLD BY'] || lmap['BILLED BY'] || null;
+
+  // Invoice / order number
+  invoiceNo =
+    lmap['ORDER NO'] || lmap['INVOICE NO'] || lmap['INVOICE NUMBER'] ||
+    lmap['INVOICE #'] || lmap['ORDER NUMBER'] || lmap['DOCUMENT NO'] ||
+    lmap['RECEIPT NO'] || lmap['RECEIPT NUMBER'] || lmap['TRANSACTION NO'] || null;
+
+  // Date — try many label variants, then fall back to first date found anywhere
+  const rawDate =
+    lmap['ORDER DATE'] || lmap['INVOICE DATE'] || lmap['DATE'] ||
+    lmap['TRANSACTION DATE'] || lmap['BILL DATE'] || lmap['SALE DATE'] ||
+    lmap['RECEIPT DATE'] || lmap['ISSUED'] || null;
+  date = parseDate(rawDate);
+  if (!date) {
+    const anyDate = content.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/);
+    if (anyDate) date = parseDate(anyDate[1]);
+  }
+
+  // Job / PO number — only accept 3–7 plain digits
+  const JOB_LABELS = [
+    'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PO #',
+    'PURCHASE ORDER', 'PURCHASE ORDER NO', 'CUSTOMER PO', 'CUST PO',
+    'JOB NO', 'JOB #', 'JOB NUMBER', 'JOB ID',
+    'WORK ORDER', 'WORK ORDER NO', 'WO #', 'W.O. NO',
+    'YOUR REF', 'YOUR REFERENCE', 'CUSTOMER REF', 'REF NO',
+  ];
+  for (const lbl of JOB_LABELS) {
+    const val = lmap[lbl];
+    if (val) {
+      const m = val.trim().match(/^(\d{3,7})$/);
+      if (m) { jobNo = m[1]; break; }
     }
+  }
 
+  // ── 3. Find line items table — scan ALL tables for one with a TOTAL column ──
+  let itemsTable = null, totalCol = -1, priceCol = -1, descCol = 1;
+  for (const table of tables) {
+    for (let r = 0; r < Math.min(3, table.length); r++) {
+      const upper = table[r].map(c => c.toUpperCase().trim());
+      const tc = upper.findIndex(c => c === 'TOTAL' || c === 'AMOUNT' || c === 'EXT. PRICE' || c === 'EXT PRICE');
+      const dc = upper.findIndex(c => c.includes('DESCRIPTION') || c.includes('PRODUCT') || c.includes('ITEM') || c.includes('SERVICE'));
+      const pc = upper.findIndex(c => c.includes('UNIT PRICE') || c.includes('NET PRICE') || c === 'PRICE' || c === 'RATE');
+      if (tc >= 0 && (dc >= 0 || pc >= 0)) {
+        itemsTable = table; totalCol = tc;
+        if (dc >= 0) descCol  = dc;
+        if (pc >= 0) priceCol = pc;
+        break;
+      }
+    }
+    if (itemsTable) break;
+  }
+
+  // ── 4. Parse line items + compute total ──
+  const isContinued = tables.some(t => t.some(r => r.some(c => /continued/i.test(c))));
+
+  if (itemsTable && totalCol >= 0) {
     let sum = 0;
     let i = 0;
+    // Skip header rows (rows before first data row that contain no prices)
     while (i < itemsTable.length) {
       const row = itemsTable[i];
-      const uom = (row[uomColIdx] || '').toUpperCase();
+      const hasPrice = row.some(c => /^\d+\.\d{2}$/.test(c));
+      if (hasPrice) break;
+      i++;
+    }
 
-      // Product row: has a U/M abbreviation in the U/M column
-      if (/^(EA|EACH|PC|PCS|PR|FT|M|BX|BOX|ROLL|RL|SET|BAG|LF|LB)$/.test(uom)) {
-        const lineNo  = row[0] || '';
-        const desc    = row[1] || '';   // "ARLCP3540 CVR CLG BOX BLANK PLASTIC WHI"
-        const netPrice = parseFloat(row[netPriceColIdx]) || null;
-        const lineTotal = parseFloat(row[totalColIdx]);
+    while (i < itemsTable.length) {
+      const row = itemsTable[i];
+      if (row.length <= totalCol) { i++; continue; }
 
-        // Qty comes from the immediately following qty row (col 1 = qty shipped, col 2 = qty ordered)
-        const nextRow = itemsTable[i + 1] || [];
-        const qty = parseInt(nextRow[2] || nextRow[1]) || null; // shipped qty preferred
+      const totalCell = row[totalCol] || '';
+      const lineTotal = parseFloat(totalCell.replace(/[$,]/g, ''));
+      const desc = row[descCol] || '';
 
-        items.push({ lineNo, desc, qty, unit: netPrice, total: isNaN(lineTotal) ? null : lineTotal });
-        if (!isNaN(lineTotal) && lineTotal > 0) sum += lineTotal;
-        i += 2; // skip the qty row
-        continue;
-      }
+      const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
 
-      // Fee row (ECO Fee, Surcharge, etc.)
-      if (row.some(c => /fee|surcharge|eco|levy/i.test(c))) {
-        const label = row.find(c => /fee|surcharge|eco|levy/i.test(c)) || 'Fee';
+      // A data row must have a non-zero numeric total
+      if (!isNaN(lineTotal) && lineTotal > 0 && !isFee) {
+        const netPrice = priceCol >= 0 ? parseFloat((row[priceCol] || '').replace(/[$,]/g,'')) : null;
+        const lineNo = row[0] || '';
+
+        // Qty: find first small positive integer in the row (skip the line number col)
+        let qty = null;
+        for (let q = 1; q < row.length; q++) {
+          if (q === totalCol || q === priceCol) continue;
+          const n = parseInt(row[q]);
+          if (!isNaN(n) && n > 0 && n < 10000 && /^\d+$/.test(row[q].trim())) {
+            qty = n; break;
+          }
+        }
+        // If no qty in this row, check next row
+        if (qty === null) {
+          const nextRow = itemsTable[i + 1] || [];
+          for (let q = 0; q < Math.min(4, nextRow.length); q++) {
+            const n = parseInt(nextRow[q]);
+            if (!isNaN(n) && n > 0 && /^\d+$/.test(nextRow[q].trim())) {
+              qty = n; break;
+            }
+          }
+        }
+
+        if (desc.length > 1) {
+          items.push({ lineNo, desc, qty, unit: isNaN(netPrice) ? null : netPrice, total: lineTotal });
+          sum += lineTotal;
+        }
+      } else if (isFee) {
+        const feeLabel = row.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
         let feeTotal = null;
         for (let k = row.length - 1; k >= 0; k--) {
-          const n = parseFloat(row[k]);
+          const n = parseFloat((row[k] || '').replace(/[$,]/g,''));
           if (!isNaN(n) && n > 0) { feeTotal = n; break; }
         }
         if (feeTotal !== null) {
-          items.push({ lineNo: '', desc: label, qty: null, unit: null, total: feeTotal });
+          items.push({ lineNo: '', desc: feeLabel, qty: null, unit: null, total: feeTotal });
           sum += feeTotal;
         }
       }
       i++;
     }
 
-    if (isContinued) {
-      total = sum > 0 ? Math.round(sum * 100) / 100 : null;
-    } else {
-      // Read actual total from last table
-      for (const row of [...lastTable].reverse()) {
-        for (const cell of [...row].reverse()) {
-          const n = parseFloat(cell);
-          if (!isNaN(n) && n > 0) { total = n; break; }
-        }
-        if (total !== null) break;
-      }
+    if (isContinued && sum > 0) {
+      total = Math.round(sum * 100) / 100;
     }
+  }
+
+  // ── 5. Total fallback — label map then any obvious "TOTAL $X.XX" line ──
+  if (total === null) {
+    const rawTotal =
+      lmap['TOTAL'] || lmap['GRAND TOTAL'] || lmap['INVOICE TOTAL'] ||
+      lmap['AMOUNT DUE'] || lmap['BALANCE DUE'] || lmap['TOTAL DUE'] ||
+      lmap['SUBTOTAL'] || null;
+    if (rawTotal) {
+      const n = parseFloat(rawTotal.replace(/[$,]/g, ''));
+      if (!isNaN(n)) total = n;
+    }
+  }
+  if (total === null) {
+    // Scan plain text for patterns like "Total $279.62" or "TOTAL: 279.62"
+    const tm = content.match(/\bTOTAL\b[\s:$]*(\d[\d,]*\.\d{2})/i);
+    if (tm) total = parseFloat(tm[1].replace(/,/g,''));
   }
 
   console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total, itemCount: items.length });
