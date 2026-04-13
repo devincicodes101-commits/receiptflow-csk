@@ -74,6 +74,114 @@ const upload = multer({
 });
 
 
+// ── Parse structured fields from LlamaParse HTML+markdown output ──
+function extractFieldsFromLlama(content) {
+  let vendor = null, invoiceNo = null, date = null, jobNo = null, total = null;
+
+  // Vendor: first **BOLD** heading in the markdown section
+  const boldMatch = content.match(/\*\*([A-Za-z][A-Za-z\s&.-]+?)\*\*/);
+  if (boldMatch) vendor = boldMatch[1].trim();
+
+  // Parse all HTML tables → array of [table][row][col] = cellText
+  const tables = [];
+  for (const [tableHtml] of content.matchAll(/<table[\s\S]*?<\/table>/gi)) {
+    const rows = [];
+    for (const [rowHtml] of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
+      const cells = [];
+      for (const [, inner] of rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)) {
+        const text = inner
+          .replace(/<br\s*\/?>/gi, ' ')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/\s+/g, ' ').trim();
+        cells.push(text);
+      }
+      if (cells.some(c => c.length > 0)) rows.push(cells);
+    }
+    if (rows.length) tables.push(rows);
+  }
+
+  // Build label→value map from the first 2 tables (header info box)
+  // In Gescan documents, each pair of rows = labels row then values row
+  const lmap = {};
+  for (const table of tables.slice(0, 2)) {
+    for (let r = 0; r + 1 < table.length; r++) {
+      const lRow = table[r];
+      const vRow = table[r + 1] || [];
+      // A label row contains mostly uppercase letter strings — no dates, no long numbers
+      const isLabelRow = lRow.some(c => /^[A-Z][A-Z\s./()-]{2,}$/.test(c)) &&
+                         !lRow.some(c => /^\d{2}\/\d{2}\/\d{4}$/.test(c));
+      if (isLabelRow) {
+        for (let c = 0; c < lRow.length; c++) {
+          const lbl = lRow[c].toUpperCase().replace(/\s+/g, ' ').trim();
+          const val = (vRow[c] || '').trim();
+          if (lbl.length > 1 && val.length > 0) lmap[lbl] = val;
+        }
+      }
+    }
+  }
+  console.log('[fields] label map:', JSON.stringify(lmap));
+
+  // Invoice number
+  invoiceNo = lmap['ORDER NO'] || lmap['INVOICE NO'] || lmap['INVOICE NUMBER'] || null;
+
+  // Job number — only accept 3–7 digit values
+  const rawJob = lmap['YOUR P.O. NO'] || lmap['YOUR P.O.NO'] || lmap['P.O. NO'] ||
+                 lmap['PO NO'] || lmap['PO #'] || null;
+  if (rawJob && /^\d{3,7}$/.test(rawJob.trim())) jobNo = rawJob.trim();
+
+  // Date — convert MM/DD/YYYY → YYYY-MM-DD
+  const rawDate = lmap['ORDER DATE'] || lmap['INVOICE DATE'] || lmap['DATE'] || null;
+  if (rawDate) {
+    const dm = rawDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (dm) date = `${dm[3]}-${dm[1].padStart(2, '0')}-${dm[2].padStart(2, '0')}`;
+  }
+
+  // Total — check if last table says "Continued" (multi-page); if so, sum line items
+  const lastTable = tables[tables.length - 1] || [];
+  const isContinued = lastTable.some(row => row.some(c => /continued/i.test(c)));
+
+  if (isContinued && tables.length >= 3) {
+    // Line items are in table index 2; find the TOTAL column from header row
+    const itemsTable = tables[2];
+    let totalColIdx = 6; // Gescan default
+    for (const row of itemsTable.slice(0, 2)) {
+      const idx = row.findIndex(c => c.toUpperCase() === 'TOTAL');
+      if (idx >= 0) { totalColIdx = idx; break; }
+    }
+    let sum = 0;
+    for (const row of itemsTable) {
+      if (row.length <= totalColIdx) continue;
+      const uom = (row[3] || '').toUpperCase();
+      // Regular product row — U/M cell contains a unit abbreviation
+      if (/^(EA|EACH|PC|PCS|PR|FT|M|BX|BOX|ROLL|RL|SET|BAG|LF|LB)$/.test(uom)) {
+        const n = parseFloat(row[totalColIdx]);
+        if (!isNaN(n) && n > 0) sum += n;
+      }
+      // Fee/surcharge row (ECO Fee etc.) — grab the last non-empty numeric cell
+      else if (row.some(c => /fee|surcharge|eco|levy/i.test(c))) {
+        for (let i = row.length - 1; i >= 0; i--) {
+          const n = parseFloat(row[i]);
+          if (!isNaN(n) && n > 0) { sum += n; break; }
+        }
+      }
+    }
+    if (sum > 0) total = Math.round(sum * 100) / 100;
+  } else {
+    // Single-page receipt — read actual total from last table's last numeric cell
+    for (const row of [...lastTable].reverse()) {
+      for (const cell of [...row].reverse()) {
+        const n = parseFloat(cell);
+        if (!isNaN(n) && n > 0) { total = n; break; }
+      }
+      if (total !== null) break;
+    }
+  }
+
+  console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total });
+  return { vendor, invoiceNo, date, jobNo, total };
+}
+
 // ── LlamaParse helper — uploads file, polls until done, returns text ──
 async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
   const LLAMA_KEY = process.env.LLAMA_CLOUD_API_KEY;
@@ -183,6 +291,9 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       }
     }
 
+    // Parse structured fields directly from LlamaParse HTML output
+    const fields = extractFieldsFromLlama(llamaMarkdown);
+
     res.json({
       success: true,
       data: {
@@ -190,15 +301,12 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         imageDataUrl,
         receiptBlobUrl,
         isPdf: mimeType === 'application/pdf',
-        // All structured fields start empty — user fills them on the review page
-        vendor: null,
-        invoiceNo: null,
-        date: null,
-        total: null,
-        subtotal: null,
-        tax: null,
-        jobNo: null,
-        jobStatus: 'missing',
+        vendor:    fields.vendor    || null,
+        invoiceNo: fields.invoiceNo || null,
+        date:      fields.date      || null,
+        total:     fields.total     || null,
+        jobNo:     fields.jobNo     || null,
+        jobStatus: fields.jobNo ? 'found' : 'missing',
         items: [],
       }
     });

@@ -626,25 +626,25 @@ function reviewHTML() {
                         <i class="fa-solid fa-file-lines" style="margin-right:3px;color:var(--brand);"></i>LlamaParse
                     </span>
                 </div>
-                <p style="font-size:12px;color:#6B7280;margin:0 0 16px;">Read the extracted text on the left and fill in the fields below, then post to Jobber.</p>
+                <p style="font-size:12px;color:#6B7280;margin:0 0 16px;">Fields auto-detected from the receipt. Verify and correct if needed, then post to Jobber.</p>
 
                 <!-- Core fields -->
                 <div class="form-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
                     <div>
                         <label class="form-label">Vendor / Store</label>
-                        <input class="form-input" placeholder="e.g. Gescan" id="f-vendor">
+                        <input class="form-input" placeholder="e.g. Gescan" id="f-vendor" value="${escHtml(r.vendor || '')}">
                     </div>
                     <div>
                         <label class="form-label">Invoice / Order Number</label>
-                        <input class="form-input" placeholder="e.g. 17798703-00" id="f-invoice">
+                        <input class="form-input" placeholder="e.g. 17798703-00" id="f-invoice" value="${escHtml(r.invoiceNo || '')}">
                     </div>
                     <div>
                         <label class="form-label">Invoice Date</label>
-                        <input class="form-input" type="date" id="f-date">
+                        <input class="form-input" type="date" id="f-date" value="${r.date || ''}">
                     </div>
                     <div>
                         <label class="form-label">Total Amount ($)</label>
-                        <input class="form-input" type="number" step="0.01" placeholder="0.00" id="f-total">
+                        <input class="form-input" type="number" step="0.01" placeholder="0.00" id="f-total" value="${r.total != null ? r.total : ''}">
                     </div>
                 </div>
 
@@ -663,12 +663,16 @@ function reviewHTML() {
                 <div style="margin-bottom:20px;">
                     <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(YOUR P.O. NO from receipt)</span></label>
                     <div style="position:relative;">
-                        <input class="form-input job-input-missing" placeholder="e.g. 1178" id="f-jobno" style="padding-right:38px;">
+                        <input class="form-input ${r.jobNo ? 'job-input-valid' : 'job-input-missing'}" placeholder="e.g. 1178" id="f-jobno" style="padding-right:38px;" value="${escHtml(r.jobNo || '')}">
                         <span id="jobno-icon" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);">
-                            <i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>
+                            ${r.jobNo
+                                ? '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>'
+                                : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>'}
                         </span>
                     </div>
-                    <div style="margin-top:5px;font-size:11.5px;color:#6B7280;">Find the job number in the LlamaParse output and enter it here.</div>
+                    <div style="margin-top:5px;font-size:11.5px;color:${r.jobNo ? '#059669' : '#6B7280'};">
+                        ${r.jobNo ? `<i class="fa-solid fa-check" style="font-size:10px;"></i> Auto-detected from YOUR P.O. NO` : 'Not detected — enter manually if visible in the output.'}
+                    </div>
                 </div>
 
                 <!-- Actions -->
