@@ -596,10 +596,13 @@ function reviewHTML() {
             <div class="review-panel-img" style="width:320px;flex-shrink:0;">
                 <div class="receipt-img-wrap" style="height:460px;">
                     ${r.isPdf
-                        ? `<div style="text-align:center;padding:40px 20px;">
-                             <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
-                             <div style="font-size:13px;font-weight:600;color:#374151;">PDF Receipt</div>
-                           </div>`
+                        ? (r.receiptBlobUrl
+                            ? `<iframe src="${r.receiptBlobUrl}" style="width:100%;height:100%;border:none;border-radius:6px;" title="PDF Receipt"></iframe>`
+                            : `<div style="text-align:center;padding:40px 20px;">
+                                 <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
+                                 <div style="font-size:13px;font-weight:600;color:#374151;">PDF Receipt</div>
+                                 <div style="font-size:11px;color:#9CA3AF;margin-top:6px;">Preview not available</div>
+                               </div>`)
                         : `<img src="${r.imageDataUrl || ''}" alt="Receipt"
                                onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9CA3AF;font-size:13px;\\'>Preview unavailable</div>'">`
                     }

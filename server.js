@@ -344,8 +344,8 @@ async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
   const { id: jobId } = await uploadRes.json();
   console.log('[llamaparse] job started:', jobId);
 
-  // Poll every 2 seconds for up to 60 seconds (premium mode takes a bit longer)
-  for (let i = 0; i < 30; i++) {
+  // Poll every 2 seconds for up to 120 seconds
+  for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 2000));
 
     const statusRes = await fetch(
@@ -382,7 +382,7 @@ async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
     }
   }
 
-  throw new Error('LlamaParse timeout — job did not complete in 60 seconds');
+  throw new Error('LlamaParse timeout — job did not complete in 120 seconds');
 }
 
 app.post('/api/extract', upload.single('receipt'), async (req, res) => {
