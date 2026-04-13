@@ -425,11 +425,11 @@ async function postToJobber() {
     const btn = document.getElementById('btn-jobber');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Posting...'; }
 
-    const jobNo = document.getElementById('f-jobno')?.value?.trim() || state.receipt.jobNo;
-    const vendor = document.getElementById('f-vendor')?.value || state.receipt.vendor;
-    const invoiceNo = document.getElementById('f-invoice')?.value || state.receipt.invoiceNo;
-    const date = document.getElementById('f-date')?.value || state.receipt.date;
-    const total = state.receipt.total;
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || '';
+    const vendor = document.getElementById('f-vendor')?.value?.trim() || '';
+    const invoiceNo = document.getElementById('f-invoice')?.value?.trim() || '';
+    const date = document.getElementById('f-date')?.value || '';
+    const total = parseFloat(document.getElementById('f-total')?.value) || null;
 
     // Receipt was already uploaded to Vercel Blob during extraction — just pass the URL.
     const receiptBlobUrl = state.receipt.receiptBlobUrl || null;
@@ -533,7 +533,7 @@ function uploadHTML() {
 
         <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
             <i class="fa-solid fa-robot" style="color:#9CA3AF;font-size:12px;"></i>
-            <span style="font-size:11.5px;color:#9CA3AF;">Powered by GPT-4o Vision — extracts vendor, amount, invoice number, line items, and job number (PO Box)</span>
+            <span style="font-size:11.5px;color:#9CA3AF;">Powered by LlamaParse — converts receipt to readable text for manual review and Jobber posting</span>
         </div>
 
         ${hasHistory ? `
@@ -587,61 +587,18 @@ function reviewHTML() {
     const r = state.receipt;
     if (!r) return '<div>No receipt data</div>';
 
-    const jobClass = r.jobStatus === 'found' ? 'job-input-valid' : 'job-input-missing';
-    const jobIcon = r.jobStatus === 'found'
-        ? '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>'
-        : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
-    // Build debug panel for job number section
-    const raw = r._rawGpt || {};
-    let debugPanel = '';
-    if (r.jobStatus !== 'found') {
-        const rows = [];
-
-        // What GPT originally extracted for PO fields
-        rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">GPT poBox</td><td style="padding:3px 6px;font-family:monospace;color:${raw.poBox ? '#D97706' : '#9CA3AF'};">${raw.poBox != null ? escHtml(String(raw.poBox)) : '(null — GPT found nothing)'}</td></tr>`);
-        rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">GPT label</td><td style="padding:3px 6px;font-family:monospace;color:#374151;">${raw.poFieldLabel != null ? escHtml(String(raw.poFieldLabel)) : '(null)'}</td></tr>`);
-        rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">GPT rawText</td><td style="padding:3px 6px;font-family:monospace;color:#374151;">${raw.poRawText != null ? escHtml(String(raw.poRawText)) : '(null)'}</td></tr>`);
-
-        // Why it was discarded (if GPT did find something but server dropped it)
-        if (r._discardReason) {
-            rows.push(`<tr><td style="color:#DC2626;padding:3px 6px;white-space:nowrap;">Discarded</td><td style="padding:3px 6px;color:#DC2626;">${escHtml(r._discardReason)}</td></tr>`);
-        }
-
-        // All header fields GPT saw on the document
-        if (raw.potentialJobFields?.length) {
-            const fieldList = raw.potentialJobFields.map(f => `<span style="background:#E5E7EB;border-radius:3px;padding:1px 5px;margin:2px;display:inline-block;">${escHtml(f.label)}: <strong>${escHtml(String(f.value))}</strong></span>`).join('');
-            rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;vertical-align:top;">All fields</td><td style="padding:3px 6px;">${fieldList}</td></tr>`);
-        }
-
-        // GPT notes
-        if (raw.notes) {
-            rows.push(`<tr><td style="color:#6B7280;padding:3px 6px;white-space:nowrap;">Notes</td><td style="padding:3px 6px;color:#6B7280;font-size:11px;">${escHtml(raw.notes)}</td></tr>`);
-        }
-
-        debugPanel = `<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;">
-            <div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px;"><i class="fa-solid fa-bug" style="margin-right:4px;"></i>Debug — Raw AI Extraction</div>
-            <table style="font-size:11.5px;width:100%;border-collapse:collapse;">${rows.join('')}</table>
-        </div>`;
-    }
-
-    const jobMsg = r.jobStatus === 'found'
-        ? `<span style="font-size:11.5px;color:#059669;"><i class="fa-solid fa-check" style="font-size:10px;"></i> Found in receipt${r.poFieldLabel ? ` (${r.poFieldLabel})` : ''}</span>`
-        : `<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>${debugPanel}`;
-
-    const confClass = r.confidence === 'high' ? 'confidence-high' : r.confidence === 'medium' ? 'confidence-medium' : 'confidence-low';
-    const confIcon = r.confidence === 'high' ? 'fa-star' : r.confidence === 'medium' ? 'fa-star-half-stroke' : 'fa-star';
+    const mdText = escHtml(r.markdown || '(No output received from LlamaParse)');
 
     return `<div class="fade-in" style="max-width:980px;">
         <div class="review-layout" style="display:flex;gap:22px;">
 
-            <!-- Receipt Image -->
-            <div class="review-panel-img" style="width:360px;flex-shrink:0;">
-                <div class="receipt-img-wrap" style="height:500px;">
+            <!-- Receipt preview -->
+            <div class="review-panel-img" style="width:320px;flex-shrink:0;">
+                <div class="receipt-img-wrap" style="height:460px;">
                     ${r.isPdf
                         ? `<div style="text-align:center;padding:40px 20px;">
                              <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
-                             <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
-                             <div style="font-size:11.5px;color:#9CA3AF;">Text extracted and analyzed by GPT-4o</div>
+                             <div style="font-size:13px;font-weight:600;color:#374151;">PDF Receipt</div>
                            </div>`
                         : `<img src="${r.imageDataUrl || ''}" alt="Receipt"
                                onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9CA3AF;font-size:13px;\\'>Preview unavailable</div>'">`
@@ -651,103 +608,67 @@ function reviewHTML() {
                     <i class="fa-regular fa-${r.isPdf ? 'file-pdf' : 'image'}" style="margin-right:4px;"></i>
                     ${r.isPdf ? 'PDF document' : 'Uploaded receipt'}
                 </div>
-                ${r.confidence ? `
-                <div style="margin-top:8px;background:#fff;border:1px solid #E5E7EB;border-radius:6px;padding:10px 12px;">
-                    <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">AI Confidence</div>
-                    <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;${confClass === 'confidence-high' ? 'color:#059669' : confClass === 'confidence-medium' ? 'color:#D97706' : 'color:#DC2626'}">
-                        <i class="fa-solid ${confIcon}"></i> ${(r.confidence || 'unknown').charAt(0).toUpperCase() + (r.confidence || '').slice(1)}
+
+                <!-- LlamaParse raw output -->
+                <div style="margin-top:14px;">
+                    <div style="font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">
+                        <i class="fa-solid fa-file-lines" style="margin-right:4px;color:var(--brand);"></i>LlamaParse Output
                     </div>
-                    ${r.notes ? `<div style="margin-top:6px;font-size:11.5px;color:#6B7280;">${r.notes}</div>` : ''}
-                </div>` : ''}
+                    <pre id="llama-output" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:10px 12px;font-size:11px;line-height:1.6;color:#374151;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;font-family:monospace;">${mdText}</pre>
+                </div>
             </div>
 
-            <!-- Extracted Data -->
+            <!-- Manual entry fields -->
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                    <div style="font-size:16px;font-weight:700;color:#111827;">Extracted Receipt Details</div>
+                    <div style="font-size:16px;font-weight:700;color:#111827;">Fill in Receipt Details</div>
                     <span style="font-size:11px;color:#9CA3AF;background:#F3F4F6;padding:3px 8px;border-radius:4px;">
-                        <i class="fa-solid fa-robot" style="margin-right:3px;color:var(--brand);"></i>GPT-4o Vision
+                        <i class="fa-solid fa-file-lines" style="margin-right:3px;color:var(--brand);"></i>LlamaParse
                     </span>
                 </div>
+                <p style="font-size:12px;color:#6B7280;margin:0 0 16px;">Read the extracted text on the left and fill in the fields below, then post to Jobber.</p>
 
-                <!-- Fields -->
-                <div class="form-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <!-- Core fields -->
+                <div class="form-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
                     <div>
                         <label class="form-label">Vendor / Store</label>
-                        <input class="form-input" value="${escHtml(r.vendor || '')}" id="f-vendor">
+                        <input class="form-input" placeholder="e.g. Gescan" id="f-vendor">
                     </div>
                     <div>
-                        <label class="form-label">Invoice / Receipt Number</label>
-                        <input class="form-input" value="${escHtml(r.invoiceNo || '')}" id="f-invoice">
+                        <label class="form-label">Invoice / Order Number</label>
+                        <input class="form-input" placeholder="e.g. 17798703-00" id="f-invoice">
                     </div>
                     <div>
                         <label class="form-label">Invoice Date</label>
-                        <input class="form-input" type="date" value="${r.date || ''}" id="f-date">
+                        <input class="form-input" type="date" id="f-date">
                     </div>
                     <div>
-                        <label class="form-label">Expense Category</label>
-                        <select class="form-input" id="f-category">
-                            <option ${state.settings.category === 'Materials' ? 'selected' : ''}>Materials</option>
-                            <option ${state.settings.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
-                            <option ${state.settings.category === 'Supplies' ? 'selected' : ''}>Supplies</option>
-                            <option ${state.settings.category === 'Tools' ? 'selected' : ''}>Tools</option>
-                            <option ${state.settings.category === 'Other' ? 'selected' : ''}>Other</option>
-                        </select>
+                        <label class="form-label">Total Amount ($)</label>
+                        <input class="form-input" type="number" step="0.01" placeholder="0.00" id="f-total">
                     </div>
                 </div>
 
-                ${r.address ? `
-                <div style="margin-bottom:16px;">
-                    <label class="form-label">Vendor Address</label>
-                    <input class="form-input" value="${escHtml(r.address)}" id="f-address" style="color:#6B7280;">
-                </div>` : ''}
-
-                <!-- Line Items -->
-                <div style="margin-bottom:16px;">
-                    <label class="form-label">Line Items</label>
-                    <div class="table-scroll" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;">
-                        <table class="data-table" style="font-size:12.5px;min-width:420px;">
-                            <thead>
-                                <tr>
-                                    <th style="padding:7px 10px;">Description</th>
-                                    <th style="padding:7px 10px;width:50px;text-align:center;">Qty</th>
-                                    <th style="padding:7px 10px;width:80px;text-align:right;">Unit</th>
-                                    <th style="padding:7px 10px;width:80px;text-align:right;">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                            ${(r.items || []).length > 0
-                                ? (r.items || []).map(i => `<tr>
-                                    <td style="padding:7px 10px;">${escHtml(i.desc || '—')}</td>
-                                    <td style="padding:7px 10px;text-align:center;color:#6B7280;">${i.qty != null ? i.qty : '—'}</td>
-                                    <td style="padding:7px 10px;text-align:right;color:#6B7280;font-variant-numeric:tabular-nums;">${i.unit != null ? fmt(i.unit) : '—'}</td>
-                                    <td style="padding:7px 10px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${fmt(i.total)}</td>
-                                  </tr>`).join('')
-                                : '<tr><td colspan="4" style="padding:12px 10px;text-align:center;color:#9CA3AF;font-size:12px;">No line items detected</td></tr>'
-                            }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Totals -->
-                <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:10px 14px;margin-bottom:16px;">
-                    <div style="display:flex;justify-content:flex-end;gap:32px;font-size:13px;">
-                        <div style="color:#6B7280;">Subtotal <span style="font-weight:600;color:#374151;margin-left:12px;">${fmt(r.subtotal)}</span></div>
-                        <div style="color:#6B7280;">Tax / Fees <span style="font-weight:600;color:#374151;margin-left:12px;">${fmt(r.tax)}</span></div>
-                        <div style="font-weight:800;color:#111827;font-size:14.5px;">Total <span style="margin-left:12px;">${fmt(r.total)}</span></div>
-                    </div>
+                <div style="margin-bottom:14px;">
+                    <label class="form-label">Expense Category</label>
+                    <select class="form-input" id="f-category">
+                        <option ${state.settings.category === 'Materials' ? 'selected' : ''}>Materials</option>
+                        <option ${state.settings.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
+                        <option ${state.settings.category === 'Supplies' ? 'selected' : ''}>Supplies</option>
+                        <option ${state.settings.category === 'Tools' ? 'selected' : ''}>Tools</option>
+                        <option ${state.settings.category === 'Other' ? 'selected' : ''}>Other</option>
+                    </select>
                 </div>
 
                 <!-- Job Number -->
                 <div style="margin-bottom:20px;">
-                    <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(from PO Box on receipt)</span></label>
+                    <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(YOUR P.O. NO from receipt)</span></label>
                     <div style="position:relative;">
-                        <input class="form-input ${jobClass}" value="${escHtml(r.jobNo || '')}"
-                            placeholder="e.g. J-104625" id="f-jobno" style="padding-right:38px;">
-                        <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);">${jobIcon}</span>
+                        <input class="form-input job-input-missing" placeholder="e.g. 1178" id="f-jobno" style="padding-right:38px;">
+                        <span id="jobno-icon" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);">
+                            <i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>
+                        </span>
                     </div>
-                    <div style="margin-top:5px;">${jobMsg}</div>
+                    <div style="margin-top:5px;font-size:11.5px;color:#6B7280;">Find the job number in the LlamaParse output and enter it here.</div>
                 </div>
 
                 <!-- Actions -->
@@ -990,19 +911,20 @@ function bind() {
         toast('Setting updated', 'success');
     });
 
-    // Job number live validation in review
+    // Job number live icon update in review
     const fjob = document.getElementById('f-jobno');
     if (fjob) {
         fjob.addEventListener('input', () => {
             const v = fjob.value.trim();
-            if (!v) {
-                state.receipt.jobStatus = 'missing';
-                state.receipt.jobNo = '';
+            const icon = document.getElementById('jobno-icon');
+            if (!icon) return;
+            if (v) {
+                fjob.className = fjob.className.replace('job-input-missing', 'job-input-valid');
+                icon.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>';
             } else {
-                state.receipt.jobStatus = 'found';
-                state.receipt.jobNo = v;
+                fjob.className = fjob.className.replace('job-input-valid', 'job-input-missing');
+                icon.innerHTML = '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
             }
-            render();
         });
     }
 
@@ -1010,7 +932,7 @@ function bind() {
     const sapiEl = document.getElementById('settings-api-status');
     if (sapiEl) {
         fetch(API_BASE + '/api/health').then(r => r.ok ? r.json() : null).then(d => {
-            if (d) sapiEl.innerHTML = '<span style="color:#059669;font-weight:600;">Connected — GPT-4o</span>';
+            if (d) sapiEl.innerHTML = '<span style="color:#059669;font-weight:600;">Connected — LlamaParse</span>';
             else sapiEl.innerHTML = '<span style="color:#DC2626;">Offline</span>';
         }).catch(() => {
             sapiEl.innerHTML = '<span style="color:#DC2626;">Server offline — run: node server.js</span>';
@@ -1107,12 +1029,13 @@ function saveReceipt() {
     if (!state.receipt) return;
     const r = state.receipt;
 
-    // Read any edits from the form
-    const vendor = document.getElementById('f-vendor')?.value || r.vendor;
-    const invoice = document.getElementById('f-invoice')?.value || r.invoiceNo;
-    const date = document.getElementById('f-date')?.value || r.date;
-    const jobNo = document.getElementById('f-jobno')?.value?.trim() || r.jobNo;
+    // Read values from the manual entry form
+    const vendor = document.getElementById('f-vendor')?.value?.trim() || '';
+    const invoice = document.getElementById('f-invoice')?.value?.trim() || '';
+    const date = document.getElementById('f-date')?.value || '';
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || '';
     const category = document.getElementById('f-category')?.value || state.settings.category;
+    const total = parseFloat(document.getElementById('f-total')?.value) || null;
 
     const now = new Date();
     const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
@@ -1122,17 +1045,13 @@ function saveReceipt() {
         id: genId(),
         vendor,
         date,
-        amount: r.total,
+        amount: total,
         jobNo: jobNo || null,
         status: 'posted',
         invoiceNo: invoice,
         category,
         savedAt,
-        items: r.items,
-        subtotal: r.subtotal,
-        tax: r.tax,
-        total: r.total,
-        confidence: r.confidence
+        total,
     });
 
     updateBadge();
@@ -1143,8 +1062,11 @@ function saveReceipt() {
 function flagError() {
     if (!state.receipt) return;
     const r = state.receipt;
-    const jobNo = document.getElementById('f-jobno')?.value?.trim() || r.jobNo;
-    const vendor = document.getElementById('f-vendor')?.value || r.vendor;
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || '';
+    const vendor = document.getElementById('f-vendor')?.value?.trim() || '';
+    const invoice = document.getElementById('f-invoice')?.value?.trim() || '';
+    const date = document.getElementById('f-date')?.value || '';
+    const total = parseFloat(document.getElementById('f-total')?.value) || null;
 
     const now = new Date();
     const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
@@ -1153,13 +1075,13 @@ function flagError() {
     state.history.unshift({
         id: genId(),
         vendor,
-        date: r.date,
-        amount: r.total,
+        date,
+        amount: total,
         jobNo: jobNo || null,
         status: 'error',
-        invoiceNo: r.invoiceNo,
+        invoiceNo: invoice,
         savedAt,
-        error: jobNo ? 'Manually flagged for review' : 'No job number (PO Box) found on receipt'
+        error: jobNo ? 'Manually flagged for review' : 'No job number found'
     });
 
     updateBadge();

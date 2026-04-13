@@ -4,12 +4,9 @@ const multer = require('multer');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { put: blobPut } = require('@vercel/blob');
-const OpenAI = require('openai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(cors());
 app.use(express.json());
@@ -76,115 +73,6 @@ const upload = multer({
   }
 });
 
-const EXTRACTION_PROMPT = `You are an invoice parser for CSK Electric, an electrical contractor based in Abbotsford, BC.
-
-CRITICAL CONTEXT:
-- CSK Electric is the CUSTOMER/BUYER — NOT the vendor. Do NOT use CSK Electric's address as the vendor address.
-- The VENDOR is the supplier/seller (e.g. Gescan, Westburne, Home Depot, etc.)
-- The vendor's address is the supplier's own address on their letterhead, NOT the "Sold To" or "Ship To" address.
-
-════════════════════════════════════════
-JOB NUMBER / PO FIELD — THREE STEPS
-════════════════════════════════════════
-
-STEP 1 — Find the label:
-Search the entire document (header boxes, tables, grid layouts) for a field whose label is one of:
-  "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "PO NUMBER",
-  "Purchase Order", "Customer PO", "Cust PO",
-  "Job #", "Job No", "Job No.", "Job Number", "Job ID",
-  "Work Order", "WO", "WO #", "W.O.", "W/O",
-  "Your Ref", "Your Reference", "Customer Ref",
-  "Reference No", "Ref No", "Ref #", "P/O", "P/O #"
-If no such label exists on the document → poBox: null, poRawText: null. Stop here.
-
-STEP 2 — Read the cell:
-Look at the value cell directly next to or below that label.
-Read exactly what is physically printed in that cell.
-→ If the cell contains a number: proceed to step 3.
-→ If the cell is blank, empty, or contains only spaces/dashes: poBox: null, poRawText: null. Stop here.
-You MUST be able to quote the cell content verbatim. If you cannot, the cell is blank.
-
-STEP 3 — Validate and return:
-The value must be a plain number, 3–7 digits (e.g. 1178, 1249, 1095).
-Set poBox = that number. Set poRawText = the exact text you read from the cell.
-
-CRITICAL RULE: poRawText must always be filled when poBox is set.
-If you set poBox but cannot quote what you read in poRawText, go back — the cell was blank.
-
-NEVER use as a job number:
-  ✗ CUSTOMER NO / Account No (e.g. 104625) — CSK Electric's supplier account number
-  ✗ ORDER NO / Order ID (e.g. 17798703-00) — has dashes, 8+ digits
-  ✗ INVOICE NO, DOCUMENT NO, TRANSACTION NO, WAYBILL NO
-  ✗ Any number with 8 or more digits
-  ✗ Any number with dashes
-  ✗ Any number you are guessing or are not certain about
-
-GESCAN DOCUMENTS — invoice number:
-  Gescan packing slips and counter sales do not have a separate "Invoice No" field.
-  Use the ORDER NO value (e.g. 17798703-00) as the invoiceNo.
-  The ORDER NO is in the top-right header box under the label "ORDER NO".
-
-GESCAN DOCUMENTS — header box layout:
-  WITH job number:     | CUSTOMER NO | ORDER NO    | YOUR P.O. NO |
-                       |   104625    | 17798703-00 |    1178      |  → poBox = "1178"
-
-  WITHOUT job number:  | CUSTOMER NO | ORDER NO    | YOUR P.O. NO |
-                       |   104625    | 17798703-00 |              |  → poBox = null
-
-  The YOUR P.O. NO cell may be blank on many Gescan documents. A blank cell = null, always.
-  CUSTOMER NO and ORDER NO are never job numbers regardless of what they contain.
-
-POPULATE potentialJobFields:
-List every header/reference field on the document with its label and value,
-including YOUR P.O. NO (even if blank — show it as blank), ORDER NO, CUSTOMER NO.
-
-INVOICE DATE:
-- Prefer fields labelled "Invoice Date", "Date", "Invoice Date".
-- If no Invoice Date label exists, fall back to "Order Date", "Transaction Date", or any other date present.
-- For Gescan documents, the date column is labelled "ORDER DATE" — use that value.
-- Return in YYYY-MM-DD format.
-
-CREDIT / RETURN INVOICES:
-- If marked "RETURN MERCHANDISE", "CREDIT", "CREDIT MEMO", or "DO NOT PAY" → isCredit: true
-- All monetary amounts must be NEGATIVE for credits (e.g. -807.91)
-
-LINE ITEMS:
-- List distinct product/service lines only. No duplicates.
-- Each line: product code + description, quantity, unit price, line total.
-- Credit line totals are negative.
-- Include fees and surcharges as separate lines.
-
-TOTALS:
-- subtotal = gross total before taxes
-- tax = all taxes (GST, HST, PST, etc.)
-- total = final amount due
-- All negative for credit invoices.
-- If the total section says "Continued" or is blank (multi-page receipt — totals on page 2):
-  sum all visible line item totals to derive the subtotal. Set tax = null, total = that sum.
-  Do NOT leave total as null if line items are present — always compute it from visible lines.
-
-Return ONLY valid JSON, no markdown, no explanation:
-{
-  "vendor": "supplier company name",
-  "address": "supplier's own address from their letterhead",
-  "invoiceNo": "invoice or document number",
-  "date": "YYYY-MM-DD",
-  "poBox": "value from a matching PO field exactly as printed, or null",
-  "poFieldLabel": "the exact label text printed on the document, or null if poBox is null",
-  "poRawText": "the exact text you read from the PO value cell (verbatim), or null if poBox is null",
-  "potentialJobFields": [{ "label": "field label as printed", "value": "value as printed" }],
-  "isCredit": true or false,
-  "items": [
-    { "desc": "product code + description", "qty": number or null, "unit": unit price or null, "total": line total }
-  ],
-  "subtotal": number,
-  "tax": number,
-  "total": number,
-  "confidence": "high" | "medium" | "low",
-  "notes": "any observations"
-}
-
-If a field cannot be determined, use null. Never fabricate values.`;
 
 // ── LlamaParse helper — uploads file, polls until done, returns markdown ──
 async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
@@ -249,182 +137,52 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 
     console.log('[extract] mimetype:', mimeType, '| size:', fileBuffer.length, '| file:', req.file.originalname);
 
-    // ── Step 1: LlamaParse — convert image or PDF to clean markdown text ──
-    // LlamaParse handles tables, grids, and multi-column layouts far better than
-    // raw vision. The Gescan header box (CUSTOMER NO | ORDER NO | YOUR P.O. NO)
-    // comes through as a proper markdown table, making extraction much more reliable.
+    // ── LlamaParse — convert image or PDF to markdown text ──
     const llamaMarkdown = await parseWithLlamaParse(
       fileBuffer, mimeType, req.file.originalname || 'receipt'
     );
-    console.log('[extract] LlamaParse markdown preview:', llamaMarkdown.substring(0, 400));
+    console.log('[extract] LlamaParse markdown preview:', llamaMarkdown.substring(0, 500));
 
-    // ── Step 2: GPT-4o text — extract structured JSON from the markdown ──
-    // Text mode is faster, cheaper, and more accurate than vision on clean parsed text.
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'user',
-          content: EXTRACTION_PROMPT + '\n\n---\nDocument text (parsed from receipt):\n\n' + llamaMarkdown
-        }
-      ],
-      max_tokens: 2000,
-      temperature: 0
-    });
-    const rawContent = response.choices[0].message.content.trim();
-
-    // Strip markdown code fences if present
-    let jsonStr = rawContent;
-    if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-    }
-
-    let extracted;
-    try {
-      extracted = JSON.parse(jsonStr);
-    } catch (parseErr) {
-      console.error('JSON parse error:', parseErr);
-      console.error('Raw response:', rawContent);
-      return res.status(500).json({
-        error: 'AI returned invalid JSON. Raw response: ' + rawContent.substring(0, 200)
-      });
-    }
-
-    // ── Capture raw GPT extraction BEFORE any server filtering (for debug) ──
-    const _rawGpt = {
-      poBox:              extracted.poBox        ?? null,
-      poFieldLabel:       extracted.poFieldLabel ?? null,
-      poRawText:          extracted.poRawText    ?? null,
-      potentialJobFields: extracted.potentialJobFields ?? [],
-      notes:              extracted.notes        ?? null,
-      confidence:         extracted.confidence   ?? null,
-    };
-    console.log('[extract] RAW GPT extraction:', JSON.stringify(_rawGpt));
-
-    // ── Server-side PO validation ──
-    const VALID_PO_LABELS = [
-      'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PONO',
-      'PO #', 'PO#', 'P.O. #', 'P.O.#', 'PURCHASE ORDER', 'CUSTOMER PO',
-      'JOB', 'JOB #', 'JOB NO', 'JOB NO.', 'JOB NUMBER', 'JOB ID',
-      'WORK ORDER', 'WORK ORDER #', 'WO', 'WO #', 'W.O.', 'W.O. #', 'W/O', 'W/O #',
-      'YOUR REFERENCE', 'YOUR REF', 'YOUR REF NO', 'YOUR REF #',
-      'CUSTOMER REF', 'CUSTOMER REFERENCE', 'CUST REF',
-      'REFERENCE', 'REFERENCE NO', 'REF', 'REF NO', 'REF #', 'REF. NO',
-      'CONTRACT NO', 'CONTRACT #', 'PROJECT NO', 'PROJECT #',
-      'ACCOUNT REF', 'ACCT REF', 'ORDER REF', 'P/O', 'P/O #', 'P/O NO'
-    ];
-    const FORBIDDEN_VALUES = ['104625']; // CSK Electric's Gescan account — never a job number
-    // Labels that are NEVER a PO/job field — if GPT cites one of these as the label, discard it
-    const FORBIDDEN_LABELS = ['ORDER NO', 'ORDER NUMBER', 'CUSTOMER NO', 'CUSTOMER NUMBER',
-      'ACCOUNT NO', 'ACCOUNT NUMBER', 'INVOICE NO', 'INVOICE NUMBER', 'DOCUMENT NO',
-      'TRANSACTION NO', 'WAYBILL NO', 'TRACKING NO'];
-
-    let _discardReason = null;
-
-    if (extracted.poBox) {
-      const normalize = s => s.toUpperCase().replace(/[.\s]+/g, ' ').trim();
-      const labelUpper = normalize(extracted.poFieldLabel || '');
-      const labelOk = VALID_PO_LABELS.some(v => labelUpper.includes(normalize(v)));
-      const labelForbidden = FORBIDDEN_LABELS.some(v => labelUpper.includes(normalize(v)));
-      const valueStr = String(extracted.poBox).trim();
-      const valueForbidden = FORBIDDEN_VALUES.includes(valueStr);
-      const digitsOnly = valueStr.replace(/[^0-9]/g, '');
-      const tooLong = digitsOnly.length > 7;
-
-      // Cross-check: if this value appears in potentialJobFields under a forbidden label,
-      // GPT likely read it from the wrong cell (e.g. ORDER NO or CUSTOMER NO column)
-      const potFields = extracted.potentialJobFields || [];
-      const valueInForbiddenField = potFields.some(f => {
-        const fLabel = normalize(f.label || '');
-        const fValue = String(f.value || '').trim();
-        return FORBIDDEN_LABELS.some(v => fLabel.includes(normalize(v))) && fValue === valueStr;
-      });
-
-      // poRawText — if GPT set poBox but left poRawText empty (common with clean text input),
-      // auto-fill it with the poBox value rather than discarding a valid extraction.
-      if (extracted.poBox && !extracted.poRawText) {
-        extracted.poRawText = String(extracted.poBox);
-        console.log('[extract] auto-filled poRawText from poBox:', extracted.poRawText);
-      }
-      const rawText = (extracted.poRawText || '').trim();
-      const rawMissing = false; // no longer a hard discard — auto-fill handles it above
-      const rawMismatch = rawText
-        ? !rawText.replace(/\s/g, '').includes(valueStr.replace(/\s/g, ''))
-        : false;
-
-      console.log(
-        `[extract] PO validation — label:"${extracted.poFieldLabel}" value:"${extracted.poBox}" ` +
-        `labelOk:${labelOk} labelForbidden:${labelForbidden} forbidden:${valueForbidden} ` +
-        `tooLong:${tooLong} valueInForbiddenField:${valueInForbiddenField} ` +
-        `rawMissing:${rawMissing} rawMismatch:${rawMismatch}`
-      );
-
-      if (labelForbidden)             _discardReason = `label "${extracted.poFieldLabel}" is a forbidden field type`;
-      else if (!labelOk)              _discardReason = `label "${extracted.poFieldLabel}" not in approved whitelist`;
-      else if (valueForbidden)        _discardReason = `value "${valueStr}" is a forbidden account number`;
-      else if (tooLong)               _discardReason = `value "${valueStr}" has too many digits (${digitsOnly.length})`;
-      else if (valueInForbiddenField) _discardReason = `value "${valueStr}" found in a forbidden field (ORDER NO / CUSTOMER NO)`;
-      else if (rawMissing)            _discardReason = `poRawText is empty — GPT could not quote the cell, meaning it was blank`;
-      else if (rawMismatch)           _discardReason = `poRawText "${rawText}" does not contain value "${valueStr}"`;
-
-      if (_discardReason) {
-        console.log(`[extract] DISCARDING poBox — reason: ${_discardReason}`);
-        extracted.poBox = null;
-        extracted.poFieldLabel = null;
-        extracted.poRawText = null;
-      }
-    }
-
-    // Derive jobNo from poBox.
-    // Jobber job numbers are always integers — strip any non-numeric suffix
-    // (e.g. "1095-RETURN" → "1095", "1391-CREDIT" → "1391").
-    const rawPO = (extracted.poBox || '').toString().trim();
-    let jobNo = null;
-    let jobStatus = 'missing';
-
-    if (rawPO && rawPO.toLowerCase() !== 'null') {
-      const numericMatch = rawPO.match(/^(\d+)/);
-      jobNo = numericMatch ? numericMatch[1] : rawPO;
-      jobStatus = 'found';
-    }
-
-    // Image preview data URL (kept small — only for images, shown on review page)
+    // Image preview data URL (only for images — shown beside the markdown on review page)
     const imageDataUrl = mimeType !== 'application/pdf'
       ? `data:${mimeType};base64,${fileBuffer.toString('base64')}`
       : null;
 
-    // Upload file to Vercel Blob now, while it's already on the server.
-    // Store just the public URL — avoids sending the whole file back to the browser
-    // and then back again to /api/create-expense (which causes Payload Too Large for PDFs).
+    // Upload to Vercel Blob so the receipt URL can be attached to a Jobber expense later
     let receiptBlobUrl = null;
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       try {
         const ext = mimeType === 'application/pdf' ? 'pdf' : (mimeType.split('/')[1] || 'jpg');
-        const safeName = (extracted.invoiceNo || 'receipt').replace(/[^a-zA-Z0-9]/g, '_');
-        const blob = await blobPut(`receipts/${safeName}_${Date.now()}.${ext}`, fileBuffer, {
+        const safeName = `receipt_${Date.now()}`;
+        const blobResult = await blobPut(`receipts/${safeName}.${ext}`, fileBuffer, {
           access: 'public',
           contentType: mimeType,
           token: process.env.BLOB_READ_WRITE_TOKEN
         });
-        receiptBlobUrl = blob.url;
+        receiptBlobUrl = blobResult.url;
         console.log('[extract] uploaded to Vercel Blob:', receiptBlobUrl);
       } catch (blobErr) {
         console.error('[extract] Blob upload failed:', blobErr.message);
-        // Non-fatal — extraction still succeeds, receipt just won't attach to Jobber
       }
     }
 
     res.json({
       success: true,
       data: {
-        ...extracted,
-        jobNo,
-        jobStatus,
+        markdown: llamaMarkdown,
         imageDataUrl,
         receiptBlobUrl,
         isPdf: mimeType === 'application/pdf',
-        _rawGpt,          // full raw GPT extraction before server filtering
-        _discardReason,   // why poBox was discarded (null if kept or never set)
+        // All structured fields start empty — user fills them on the review page
+        vendor: null,
+        invoiceNo: null,
+        date: null,
+        total: null,
+        subtotal: null,
+        tax: null,
+        jobNo: null,
+        jobStatus: 'missing',
+        items: [],
       }
     });
 
@@ -434,13 +192,6 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({ error: 'File too large. Maximum size is 4MB.' });
     }
-    if (err.status === 401) {
-      return res.status(500).json({ error: 'Invalid OpenAI API key.' });
-    }
-    if (err.status === 429) {
-      return res.status(500).json({ error: 'OpenAI rate limit hit. Please wait a moment and try again.' });
-    }
-
     res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
