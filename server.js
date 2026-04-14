@@ -373,73 +373,49 @@ function extractFieldsFromLlama(content) {
   return { vendor, invoiceNo, date, jobNo, total, items };
 }
 
-// ── LlamaParse helper — uploads file, polls until done, returns text ──
-async function parseWithLlamaParse(fileBuffer, mimeType, filename) {
-  const LLAMA_KEY = process.env.LLAMA_CLOUD_API_KEY;
-  if (!LLAMA_KEY) throw new Error('LLAMA_CLOUD_API_KEY not set');
+// ── Gemini helper — sends image or PDF to Gemini 2.0 Flash, returns HTML+markdown ──
+async function parseWithGemini(fileBuffer, mimeType, filename) {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
 
-  // Upload with premium_mode + HTML tables for best cell-level accuracy.
-  // Gescan receipts have a two-row header box; premium_mode handles this better.
-  const form = new FormData();
-  const blob = new Blob([fileBuffer], { type: mimeType });
-  form.append('file', blob, filename || 'receipt');
-  form.append('premium_mode', 'true');
-  form.append('output_tables_as_HTML', 'true');
-  form.append('language', 'en');
+  const base64Data = fileBuffer.toString('base64');
 
-  const uploadRes = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${LLAMA_KEY}` },
-    body: form
-  });
+  const prompt = `You are a receipt and invoice parser. Extract ALL content from this document.
 
-  if (!uploadRes.ok) {
-    const err = await uploadRes.text();
-    throw new Error(`LlamaParse upload failed: ${uploadRes.status} ${err.substring(0, 200)}`);
+Formatting rules (follow exactly):
+- Output the vendor/company name as a # H1 heading (e.g. "# GESCAN")
+- Output every table as an HTML <table> with <tr><th> for header rows and <tr><td> for data cells
+- Preserve every value exactly as printed — do not round numbers, reformat dates, or paraphrase
+- Include ALL rows: header rows, sub-header rows, data rows, totals rows
+- Output plain text (addresses, notes) as-is between tables
+- Do not add commentary, explanations, or markdown code fences`;
+
+  const body = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: mimeType, data: base64Data } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens: 8192 }
+  };
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini API error: ${res.status} ${err.substring(0, 300)}`);
   }
 
-  const { id: jobId } = await uploadRes.json();
-  console.log('[llamaparse] job started:', jobId);
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text) throw new Error('Gemini returned empty response');
 
-  // Poll every 2 seconds for up to 120 seconds
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 2000));
-
-    const statusRes = await fetch(
-      `https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}`,
-      { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }
-    );
-    const statusData = await statusRes.json();
-    console.log('[llamaparse] poll', i + 1, '— status:', statusData.status);
-
-    if (statusData.status === 'SUCCESS') {
-      // Fetch both markdown and raw text, then combine so we don't miss any data.
-      // Markdown has table structure; raw text has plain cell values as a fallback.
-      const [mdRes, txtRes] = await Promise.all([
-        fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`,
-          { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }),
-        fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/raw/text`,
-          { headers: { 'Authorization': `Bearer ${LLAMA_KEY}` } }),
-      ]);
-      const mdData  = await mdRes.json();
-      const txtData = await txtRes.json().catch(() => ({}));
-
-      const markdown = mdData.markdown || '';
-      const rawText  = txtData.content  || txtData.text || txtData.raw_text || '';
-
-      console.log('[llamaparse] markdown preview:', markdown.substring(0, 300));
-      console.log('[llamaparse] raw text preview:', rawText.substring(0, 300));
-
-      // Return both so the UI can show everything LlamaParse found
-      return markdown + (rawText ? '\n\n---RAW TEXT---\n' + rawText : '');
-    }
-
-    if (statusData.status === 'ERROR') {
-      throw new Error(`LlamaParse processing error: ${JSON.stringify(statusData)}`);
-    }
-  }
-
-  throw new Error('LlamaParse timeout — job did not complete in 120 seconds');
+  console.log('[gemini] output preview:', text.substring(0, 300));
+  return text;
 }
 
 app.post('/api/extract', upload.single('receipt'), async (req, res) => {
@@ -453,13 +429,13 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 
     console.log('[extract] mimetype:', mimeType, '| size:', fileBuffer.length, '| file:', req.file.originalname);
 
-    // ── LlamaParse — convert image or PDF to markdown text ──
-    const llamaMarkdown = await parseWithLlamaParse(
+    // ── Gemini — convert image or PDF to structured markdown+HTML text ──
+    const geminiOutput = await parseWithGemini(
       fileBuffer, mimeType, req.file.originalname || 'receipt'
     );
-    console.log('[extract] LlamaParse markdown preview:', llamaMarkdown.substring(0, 500));
+    console.log('[extract] Gemini output preview:', geminiOutput.substring(0, 500));
 
-    // Image preview data URL (only for images — shown beside the markdown on review page)
+    // Image preview data URL (only for images — shown beside the output on review page)
     const imageDataUrl = mimeType !== 'application/pdf'
       ? `data:${mimeType};base64,${fileBuffer.toString('base64')}`
       : null;
@@ -482,13 +458,13 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
       }
     }
 
-    // Parse structured fields directly from LlamaParse HTML output
-    const fields = extractFieldsFromLlama(llamaMarkdown);
+    // Parse structured fields from Gemini HTML+markdown output
+    const fields = extractFieldsFromLlama(geminiOutput);
 
     res.json({
       success: true,
       data: {
-        markdown: llamaMarkdown,
+        markdown: geminiOutput,
         imageDataUrl,
         receiptBlobUrl,
         isPdf: mimeType === 'application/pdf',
@@ -514,7 +490,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', model: 'gpt-4o' });
+  res.json({ status: 'ok', model: 'gemini-2.0-flash' });
 });
 
 // ── Upstash Redis helpers (no extra package — pure fetch) ──
