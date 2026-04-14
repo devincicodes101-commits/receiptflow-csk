@@ -40,11 +40,9 @@
         .upload-zone:hover { border-color: var(--brand); background: var(--brand-light); }
         .upload-zone.dragover { border-color: var(--brand); background: var(--brand-light); transform: scale(1.01); }
 
-        .progress-bar { height: 4px; background: #E5E7EB; border-radius: 2px; overflow: hidden; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--brand), #E07B1A); border-radius: 2px; transition: width 0.6s ease; }
-
         .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 600; }
         .badge-posted { background: #ECFDF5; color: #059669; }
+        .badge-jobber { background: #EEF2FF; color: #4F46E5; }
         .badge-error { background: #FEF2F2; color: #DC2626; }
         .badge-processing { background: #FFFBEB; color: #D97706; }
 
@@ -78,6 +76,9 @@
         .btn-primary { background: var(--brand); color: #fff; }
         .btn-primary:hover { background: var(--brand-hover); }
         .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-jobber { background: #4F46E5; color: #fff; }
+        .btn-jobber:hover { background: #4338CA; }
+        .btn-jobber:disabled { opacity: 0.45; cursor: not-allowed; }
         .btn-secondary { background: #fff; color: #374151; border: 1px solid #D1D5DB; }
         .btn-secondary:hover { background: #F9FAFB; }
         .btn-danger { background: #fff; color: #DC2626; border: 1px solid #FECACA; }
@@ -88,7 +89,6 @@
 
         .job-input-valid { border-color: #059669 !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.08) !important; }
         .job-input-missing { border-color: #DC2626 !important; box-shadow: 0 0 0 3px rgba(220,38,38,0.08) !important; }
-        .job-input-invalid { border-color: #D97706 !important; box-shadow: 0 0 0 3px rgba(217,119,6,0.08) !important; }
 
         .inline-input { padding: 4px 8px; border: 1px solid var(--brand); border-radius: 4px; font-size: 13px; font-family: inherit; width: 130px; outline: none; box-shadow: 0 0 0 3px rgba(184,98,10,0.08); }
 
@@ -112,7 +112,9 @@
         .confidence-medium { color: #D97706; }
         .confidence-low { color: #DC2626; }
 
-        .ai-note { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400E; margin-top: 10px; }
+        /* Login screen */
+        .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #111113 0%, #1C1C1F 100%); }
+        .login-card { background: #fff; border-radius: 14px; padding: 36px 32px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
 
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -120,7 +122,36 @@
     </style>
 </head>
 <body>
-<div id="app" class="flex h-screen overflow-hidden">
+
+<!-- ── Login Screen ── -->
+<div id="login-screen" class="login-wrap" style="display:none;">
+    <div class="login-card">
+        <div style="text-align:center;margin-bottom:28px;">
+            <div style="width:48px;height:48px;background:var(--brand);border-radius:10px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+                <i class="fa-solid fa-receipt" style="color:#fff;font-size:20px;"></i>
+            </div>
+            <div style="font-size:20px;font-weight:800;color:#111827;letter-spacing:-0.02em;">ReceiptFlow</div>
+            <div style="font-size:13px;color:#6B7280;margin-top:3px;">CSK Electric — Sign in to continue</div>
+        </div>
+        <div id="login-error" style="display:none;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:9px 12px;font-size:12.5px;color:#DC2626;margin-bottom:14px;">
+            <i class="fa-solid fa-circle-xmark" style="margin-right:5px;"></i>Invalid username or password
+        </div>
+        <div style="margin-bottom:14px;">
+            <label class="form-label">Username</label>
+            <input class="form-input" type="text" id="login-user" placeholder="Enter username" autocomplete="username">
+        </div>
+        <div style="margin-bottom:20px;">
+            <label class="form-label">Password</label>
+            <input class="form-input" type="password" id="login-pass" placeholder="Enter password" autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:9px;" id="login-btn" onclick="doLogin()">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In
+        </button>
+    </div>
+</div>
+
+<!-- ── Main App ── -->
+<div id="app" class="flex h-screen overflow-hidden" style="display:none !important;">
 
     <!-- Sidebar -->
     <aside class="sidebar">
@@ -152,6 +183,11 @@
                 <i class="fa-solid fa-gear"></i>Settings
             </div>
         </nav>
+        <div style="padding:12px 14px;border-top:1px solid #262629;">
+            <button onclick="doLogout()" style="display:flex;align-items:center;gap:8px;background:none;border:none;color:#6B7280;font-size:12px;cursor:pointer;font-family:inherit;padding:0;">
+                <i class="fa-solid fa-arrow-right-from-bracket" style="font-size:11px;"></i>Sign Out
+            </button>
+        </div>
     </aside>
 
     <!-- Main -->
@@ -161,6 +197,9 @@
                 <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
+                <span id="jobber-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
+                    <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Jobber...
+                </span>
                 <span id="api-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
                     <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Checking...
                 </span>
@@ -174,6 +213,84 @@
 <input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none">
 
 <script>
+/* ── Auth ── */
+let authHeader = sessionStorage.getItem('auth') || '';
+
+function doLogin() {
+    const user = document.getElementById('login-user').value.trim();
+    const pass = document.getElementById('login-pass').value;
+    if (!user || !pass) return;
+
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Signing in...';
+
+    const creds = btoa(user + ':' + pass);
+    fetch('/api/health', { headers: { 'Authorization': 'Basic ' + creds } })
+        .then(r => {
+            if (r.ok) {
+                authHeader = 'Basic ' + creds;
+                sessionStorage.setItem('auth', authHeader);
+                showApp();
+            } else {
+                document.getElementById('login-error').style.display = 'block';
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In';
+            }
+        })
+        .catch(() => {
+            document.getElementById('login-error').style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In';
+        });
+}
+
+function doLogout() {
+    authHeader = '';
+    sessionStorage.removeItem('auth');
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('login-user').value = '';
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-error').style.display = 'none';
+}
+
+function showApp() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.removeProperty('display');
+    document.getElementById('app').style.display = 'flex';
+    checkHealth();
+    updateBadge();
+    render();
+}
+
+function authedFetch(url, opts = {}) {
+    opts.headers = opts.headers || {};
+    opts.headers['Authorization'] = authHeader;
+    return fetch(url, opts);
+}
+
+// Check if already logged in
+if (authHeader) {
+    fetch('/api/health', { headers: { 'Authorization': authHeader } })
+        .then(r => r.ok ? showApp() : showLoginScreen())
+        .catch(() => showLoginScreen());
+} else {
+    showLoginScreen();
+}
+
+function showLoginScreen() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    // Enter key on password field
+    document.getElementById('login-pass').addEventListener('keydown', e => {
+        if (e.key === 'Enter') doLogin();
+    });
+    document.getElementById('login-user').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('login-pass').focus();
+    });
+}
+
 /* ── State ── */
 let state = {
     view: 'upload',
@@ -181,10 +298,9 @@ let state = {
     receipt: null,
     uploading: false,
     editingJobId: null,
+    postingToJobber: false,
     settings: {
-        autoPost: false,
         requireConfirm: true,
-        dailySummary: true,
         category: 'Materials'
     }
 };
@@ -205,7 +321,7 @@ const fmtDate = d => {
 };
 const genId = () => 'REC-' + (2041 + state.history.length + 1);
 const stats = () => {
-    const p = state.history.filter(r => r.status === 'posted');
+    const p = state.history.filter(r => r.status === 'posted' || r.status === 'jobber');
     const e = state.history.filter(r => r.status === 'error');
     return {
         total: state.history.length,
@@ -239,15 +355,24 @@ function toast(msg, type = 'info', duration = 3500) {
 /* ── API Health Check ── */
 async function checkHealth() {
     const el = document.getElementById('api-status');
+    const jel = document.getElementById('jobber-status');
     if (!el) return;
     try {
-        const res = await fetch(API_BASE + '/api/health');
+        const res = await authedFetch(API_BASE + '/api/health');
         if (res.ok) {
+            const data = await res.json();
             el.innerHTML = '<i class="fa-solid fa-circle" style="color:#059669;font-size:8px;margin-right:4px;"></i>AI Ready (Gemini)';
             el.style.color = '#059669';
-        } else {
-            throw new Error();
-        }
+            if (jel) {
+                if (data.jobberConfigured) {
+                    jel.innerHTML = '<i class="fa-solid fa-circle" style="color:#4F46E5;font-size:8px;margin-right:4px;"></i>Jobber Connected';
+                    jel.style.color = '#4F46E5';
+                } else {
+                    jel.innerHTML = '<i class="fa-solid fa-circle" style="color:#D97706;font-size:8px;margin-right:4px;"></i>Jobber Not Set';
+                    jel.style.color = '#D97706';
+                }
+            }
+        } else throw new Error();
     } catch {
         el.innerHTML = '<i class="fa-solid fa-circle" style="color:#DC2626;font-size:8px;margin-right:4px;"></i>Server Offline';
         el.style.color = '#DC2626';
@@ -260,6 +385,7 @@ function navigate(view) {
     state.uploading = false;
     state.receipt = null;
     state.editingJobId = null;
+    state.postingToJobber = false;
     document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === view));
     const titles = {
         upload: 'Upload Receipt', history: 'Processing History',
@@ -326,7 +452,7 @@ function uploadHTML() {
 
         <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
             <i class="fa-solid fa-robot" style="color:#9CA3AF;font-size:12px;"></i>
-            <span style="font-size:11.5px;color:#9CA3AF;">Powered by Gemini Vision — extracts vendor, amount, invoice number, line items, and job number (PO Box)</span>
+            <span style="font-size:11.5px;color:#9CA3AF;">Powered by Gemini Vision — extracts vendor, amount, invoice number, line items, and posts expenses to Jobber</span>
         </div>
 
         ${hasHistory ? `
@@ -334,14 +460,14 @@ function uploadHTML() {
             <div style="font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Recent Uploads</div>
             <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
                 <table class="data-table">
-                    <thead><tr><th>Receipt</th><th>Vendor</th><th>Amount</th><th>Job (PO Box)</th><th>Status</th></tr></thead>
+                    <thead><tr><th>Receipt</th><th>Vendor</th><th>Amount</th><th>Job #</th><th>Status</th></tr></thead>
                     <tbody>
                     ${state.history.slice(0, 5).map(r => `<tr>
                         <td style="font-weight:500;color:#374151;font-family:monospace;font-size:12px;">${r.id}</td>
-                        <td>${r.vendor || '—'}</td>
+                        <td>${escHtml(r.vendor || '—')}</td>
                         <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
-                        <td style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${r.jobNo || 'Not found'}</td>
-                        <td><span class="badge badge-${r.status}">${r.status === 'posted' ? 'Parsed' : 'Error'}</span></td>
+                        <td style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</td>
+                        <td><span class="badge badge-${r.status === 'jobber' ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${r.status === 'jobber' ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
                     </tr>`).join('')}
                     </tbody>
                 </table>
@@ -350,7 +476,7 @@ function uploadHTML() {
     </div>`;
 }
 
-/* ── Uploading / Processing View ── */
+/* ── Uploading View ── */
 function uploadingHTML() {
     return `<div class="fade-in" style="max-width:520px;margin:80px auto;text-align:center;">
         <div style="margin-bottom:24px;">
@@ -369,7 +495,7 @@ function uploadingHTML() {
                 <i class="fa-regular fa-circle" style="width:16px;"></i> Extracting vendor &amp; amounts
             </div>
             <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:#9CA3AF;">
-                <i class="fa-regular fa-circle" style="width:16px;"></i> Detecting job number (PO Box)
+                <i class="fa-regular fa-circle" style="width:16px;"></i> Detecting job number
             </div>
         </div>
     </div>`;
@@ -386,10 +512,14 @@ function reviewHTML() {
         : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
     const jobMsg = r.jobStatus === 'found'
         ? `<span style="font-size:11.5px;color:#059669;"><i class="fa-solid fa-check" style="font-size:10px;"></i> Found in receipt${r.poFieldLabel ? ` (${r.poFieldLabel})` : ''}</span>`
-        : '<span style="font-size:11.5px;color:#DC2626;">No job number (PO Box) detected. Enter one manually.</span>';
+        : '<span style="font-size:11.5px;color:#DC2626;">No job number detected — enter one manually to post to Jobber.</span>';
 
     const confClass = r.confidence === 'high' ? 'confidence-high' : r.confidence === 'medium' ? 'confidence-medium' : 'confidence-low';
-    const confIcon = r.confidence === 'high' ? 'fa-star' : r.confidence === 'medium' ? 'fa-star-half-stroke' : 'fa-star';
+    const confIcon = r.confidence === 'high' ? 'fa-star' : 'fa-star-half-stroke';
+
+    const jobberBtnLabel = state.postingToJobber
+        ? '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Posting...'
+        : '<i class="fa-solid fa-paper-plane" style="font-size:12px;"></i> Post to Jobber';
 
     return `<div class="fade-in" style="max-width:980px;">
         <div style="display:flex;gap:22px;">
@@ -414,10 +544,16 @@ function reviewHTML() {
                 ${r.confidence ? `
                 <div style="margin-top:8px;background:#fff;border:1px solid #E5E7EB;border-radius:6px;padding:10px 12px;">
                     <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">AI Confidence</div>
-                    <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;${confClass === 'confidence-high' ? 'color:#059669' : confClass === 'confidence-medium' ? 'color:#D97706' : 'color:#DC2626'}">
+                    <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;${r.confidence === 'high' ? 'color:#059669' : r.confidence === 'medium' ? 'color:#D97706' : 'color:#DC2626'}">
                         <i class="fa-solid ${confIcon}"></i> ${(r.confidence || 'unknown').charAt(0).toUpperCase() + (r.confidence || '').slice(1)}
                     </div>
-                    ${r.notes ? `<div style="margin-top:6px;font-size:11.5px;color:#6B7280;">${r.notes}</div>` : ''}
+                    ${r.notes ? `<div style="margin-top:6px;font-size:11.5px;color:#6B7280;">${escHtml(r.notes)}</div>` : ''}
+                </div>` : ''}
+
+                ${r.jobberExpenseId ? `
+                <div style="margin-top:8px;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:6px;padding:10px 12px;">
+                    <div style="font-size:12px;font-weight:600;color:#4F46E5;margin-bottom:2px;"><i class="fa-solid fa-check-circle" style="margin-right:5px;"></i>Posted to Jobber</div>
+                    <div style="font-size:11.5px;color:#6B7280;">Expense ID: ${escHtml(r.jobberExpenseId)}</div>
                 </div>` : ''}
             </div>
 
@@ -430,7 +566,6 @@ function reviewHTML() {
                     </span>
                 </div>
 
-                <!-- Fields -->
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
                     <div>
                         <label class="form-label">Vendor / Store</label>
@@ -501,10 +636,10 @@ function reviewHTML() {
 
                 <!-- Job Number -->
                 <div style="margin-bottom:20px;">
-                    <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(from PO Box on receipt)</span></label>
+                    <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(Jobber job # from PO field on receipt)</span></label>
                     <div style="position:relative;">
                         <input class="form-input ${jobClass}" value="${escHtml(r.jobNo || '')}"
-                            placeholder="e.g. J-104625" id="f-jobno" style="padding-right:38px;">
+                            placeholder="e.g. 1408" id="f-jobno" style="padding-right:38px;">
                         <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);">${jobIcon}</span>
                     </div>
                     <div style="margin-top:5px;">${jobMsg}</div>
@@ -512,8 +647,11 @@ function reviewHTML() {
 
                 <!-- Actions -->
                 <div style="display:flex;gap:8px;padding-top:16px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
+                    <button class="btn btn-jobber" id="btn-jobber" ${state.postingToJobber ? 'disabled' : ''}>
+                        ${jobberBtnLabel}
+                    </button>
                     <button class="btn btn-primary" id="btn-save">
-                        <i class="fa-solid fa-floppy-disk" style="font-size:12px;"></i> Save to History
+                        <i class="fa-solid fa-floppy-disk" style="font-size:12px;"></i> Save Only
                     </button>
                     <button class="btn btn-danger" id="btn-flag">
                         <i class="fa-solid fa-flag" style="font-size:11px;"></i> Flag as Error
@@ -521,6 +659,10 @@ function reviewHTML() {
                     <button class="btn btn-ghost" onclick="navigate('upload')" style="margin-left:auto;">
                         <i class="fa-solid fa-xmark" style="font-size:11px;"></i> Discard
                     </button>
+                </div>
+                <div style="margin-top:8px;font-size:11.5px;color:#9CA3AF;">
+                    <i class="fa-solid fa-info-circle" style="margin-right:3px;"></i>
+                    "Post to Jobber" creates an expense on the matching job. "Save Only" saves to local history.
                 </div>
             </div>
         </div>
@@ -536,7 +678,8 @@ function historyHTML() {
                 <input class="form-input" placeholder="Search vendor or invoice..." style="width:220px;font-size:12.5px;" id="history-search">
                 <select class="form-input" style="width:130px;font-size:12.5px;" id="history-filter">
                     <option value="all">All Status</option>
-                    <option value="posted">Parsed</option>
+                    <option value="jobber">In Jobber</option>
+                    <option value="posted">Saved</option>
                     <option value="error">Error</option>
                 </select>
             </div>
@@ -552,7 +695,7 @@ function historyHTML() {
                     <thead>
                         <tr>
                             <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
-                            <th>Amount</th><th>Job (PO Box)</th><th>Status</th><th>Saved At</th>
+                            <th>Amount</th><th>Job #</th><th>Status</th><th>Saved At</th>
                         </tr>
                     </thead>
                     <tbody id="history-tbody">
@@ -563,7 +706,7 @@ function historyHTML() {
                         <td style="font-family:monospace;font-size:12px;color:#6B7280;">${escHtml(r.invoiceNo || '—')}</td>
                         <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
                         <td><span style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
-                        <td><span class="badge badge-${r.status}">${r.status === 'posted' ? 'Parsed' : 'Error'}</span></td>
+                        <td><span class="badge badge-${r.status === 'jobber' ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${r.status === 'jobber' ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
                         <td style="color:#9CA3AF;font-size:12px;white-space:nowrap;">${r.savedAt || '—'}</td>
                     </tr>`).join('')}
                     </tbody>
@@ -584,11 +727,11 @@ function errorsHTML() {
 
     return `<div class="fade-in">
         <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:4px;">Error Queue</div>
-        <div style="font-size:12.5px;color:#6B7280;margin-bottom:16px;">These receipts need attention. Assign a job number to resolve.</div>
+        <div style="font-size:12.5px;color:#6B7280;margin-bottom:16px;">These receipts need attention. Assign a job number to post to Jobber.</div>
         <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
             <table class="data-table">
                 <thead>
-                    <tr><th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Job Number</th><th>Reason</th><th style="width:150px;">Action</th></tr>
+                    <tr><th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Job Number</th><th>Reason</th><th style="width:160px;">Action</th></tr>
                 </thead>
                 <tbody>
                 ${errs.map(r => `<tr>
@@ -598,7 +741,7 @@ function errorsHTML() {
                     <td style="font-weight:600;">${fmt(r.amount)}</td>
                     <td>${state.editingJobId === r.id
                         ? `<div style="display:flex;gap:4px;">
-                             <input class="inline-input" value="${escHtml(r.jobNo || '')}" placeholder="J-XXXXXX" id="edit-job-input">
+                             <input class="inline-input" value="${escHtml(r.jobNo || '')}" placeholder="e.g. 1408" id="edit-job-input">
                              <button class="btn btn-primary btn-sm" onclick="saveJobAssign('${r.id}')">Save</button>
                            </div>`
                         : `<span style="font-family:monospace;font-size:12px;color:#DC2626;">${escHtml(r.jobNo || 'Missing')}</span>`
@@ -626,11 +769,22 @@ function settingsHTML() {
                 <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">AI Extraction</div>
                 <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
                     <span style="color:#6B7280;">Model</span>
-                    <span style="font-weight:600;color:#374151;">Gemini Vision</span>
+                    <span style="font-weight:600;color:#374151;">Gemini 1.5 Pro (Vision)</span>
                     <span style="color:#6B7280;">API Status</span>
                     <span id="settings-api-status" style="color:#6B7280;">Checking...</span>
                     <span style="color:#6B7280;">PO Detection</span>
-                    <span style="color:#374151;">Automatic (reads PO Box / Purchase Order field)</span>
+                    <span style="color:#374151;">Automatic (reads PO / Purchase Order field)</span>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Jobber Integration</div>
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
+                    <span style="color:#6B7280;">Status</span>
+                    <span id="settings-jobber-status" style="color:#6B7280;">Checking...</span>
+                    <span style="color:#6B7280;">API Key</span>
+                    <span style="color:#374151;">Set via <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">JOBBER_API_KEY</code> env var on Vercel</span>
+                    <span style="color:#6B7280;">Posting</span>
+                    <span style="color:#374151;">Creates expense on matching Jobber job</span>
                 </div>
             </div>
             <div class="settings-section">
@@ -638,7 +792,7 @@ function settingsHTML() {
                 <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;">
                         <div>
-                            <div style="color:#374151;font-weight:500;">Require confirmation before saving</div>
+                            <div style="color:#374151;font-weight:500;">Require confirmation before posting</div>
                             <div style="font-size:11.5px;color:#9CA3AF;margin-top:1px;">Always show review screen after extraction</div>
                         </div>
                         <label class="toggle">
@@ -647,9 +801,7 @@ function settingsHTML() {
                         </label>
                     </div>
                     <div style="display:flex;align-items:center;justify-content:space-between;">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <span style="color:#374151;font-weight:500;">Default expense category</span>
-                        </div>
+                        <span style="color:#374151;font-weight:500;">Default expense category</span>
                         <select class="form-input" style="width:160px;font-size:12.5px;" id="set-category">
                             <option ${s.category === 'Materials' ? 'selected' : ''}>Materials</option>
                             <option ${s.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
@@ -660,17 +812,6 @@ function settingsHTML() {
                     </div>
                 </div>
             </div>
-            <div class="settings-section">
-                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Job Number Detection</div>
-                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:start;font-size:13px;">
-                    <span style="color:#6B7280;">Source Field</span>
-                    <span style="color:#374151;">PO Box / Purchase Order on invoice</span>
-                    <span style="color:#6B7280;">How it works</span>
-                    <span style="color:#6B7280;font-size:12px;">The AI looks for any PO, PO #, PO Box, Purchase Order, Job #, or Reference field on the receipt and treats that as the Jobber job number.</span>
-                    <span style="color:#6B7280;">On Missing</span>
-                    <span style="color:#DC2626;font-weight:500;">Flag as error</span>
-                </div>
-            </div>
             <div>
                 <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">About</div>
                 <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;font-size:13px;">
@@ -678,8 +819,8 @@ function settingsHTML() {
                     <span style="color:#374151;">ReceiptFlow v1.0</span>
                     <span style="color:#6B7280;">Company</span>
                     <span style="color:#374151;">CSK Electric</span>
-                    <span style="color:#6B7280;">User</span>
-                    <span style="color:#374151;">Chris Desaulniers (Admin)</span>
+                    <span style="color:#6B7280;">Auth</span>
+                    <span style="color:#374151;">Set via <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">AUTH_USER</code> / <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">AUTH_PASS</code> env vars</span>
                 </div>
             </div>
         </div>
@@ -688,7 +829,6 @@ function settingsHTML() {
 
 /* ── Event Binding ── */
 function bind() {
-    // Drop zone
     const dz = document.getElementById('drop-zone');
     if (dz) {
         dz.addEventListener('click', () => document.getElementById('file-input').click());
@@ -701,7 +841,6 @@ function bind() {
         });
     }
 
-    // File input
     const fi = document.getElementById('file-input');
     if (fi) {
         fi.addEventListener('change', e => {
@@ -710,19 +849,18 @@ function bind() {
         });
     }
 
-    // Review actions
     const bSave = document.getElementById('btn-save');
     if (bSave) bSave.addEventListener('click', saveReceipt);
     const bFlag = document.getElementById('btn-flag');
     if (bFlag) bFlag.addEventListener('click', flagError);
+    const bJobber = document.getElementById('btn-jobber');
+    if (bJobber) bJobber.addEventListener('click', postToJobber);
 
-    // History search/filter
     const hs = document.getElementById('history-search');
     if (hs) hs.addEventListener('input', filterHistory);
     const hf = document.getElementById('history-filter');
     if (hf) hf.addEventListener('change', filterHistory);
 
-    // Settings
     const sConfirm = document.getElementById('set-confirm');
     if (sConfirm) sConfirm.addEventListener('change', () => {
         state.settings.requireConfirm = sConfirm.checked;
@@ -734,34 +872,34 @@ function bind() {
         toast('Setting updated', 'success');
     });
 
-    // Job number live validation in review
     const fjob = document.getElementById('f-jobno');
     if (fjob) {
         fjob.addEventListener('input', () => {
             const v = fjob.value.trim();
-            if (!v) {
-                state.receipt.jobStatus = 'missing';
-                state.receipt.jobNo = '';
-            } else {
-                state.receipt.jobStatus = 'found';
-                state.receipt.jobNo = v;
-            }
+            state.receipt.jobStatus = v ? 'found' : 'missing';
+            state.receipt.jobNo = v;
             render();
         });
     }
 
-    // Settings API status
+    // Settings page status checks
     const sapiEl = document.getElementById('settings-api-status');
+    const sjobberEl = document.getElementById('settings-jobber-status');
     if (sapiEl) {
-        fetch(API_BASE + '/api/health').then(r => r.ok ? r.json() : null).then(d => {
-            if (d) sapiEl.innerHTML = '<span style="color:#059669;font-weight:600;">Connected — Gemini</span>';
-            else sapiEl.innerHTML = '<span style="color:#DC2626;">Offline</span>';
+        authedFetch(API_BASE + '/api/health').then(r => r.ok ? r.json() : null).then(d => {
+            if (d) {
+                sapiEl.innerHTML = '<span style="color:#059669;font-weight:600;">Connected — Gemini 1.5 Pro</span>';
+                if (sjobberEl) {
+                    sjobberEl.innerHTML = d.jobberConfigured
+                        ? '<span style="color:#4F46E5;font-weight:600;">Connected</span>'
+                        : '<span style="color:#D97706;font-weight:600;">JOBBER_API_KEY not set</span>';
+                }
+            }
         }).catch(() => {
-            sapiEl.innerHTML = '<span style="color:#DC2626;">Server offline — run: node server.js</span>';
+            if (sapiEl) sapiEl.innerHTML = '<span style="color:#DC2626;">Offline</span>';
         });
     }
 
-    // Inline error queue edit focus
     if (state.editingJobId) {
         const inp = document.getElementById('edit-job-input');
         if (inp) {
@@ -803,16 +941,15 @@ async function handleFile(file) {
     formData.append('receipt', file);
 
     try {
-        const res = await fetch(API_BASE + '/api/extract', {
-            method: 'POST',
-            body: formData
-        });
-
+        const res = await authedFetch(API_BASE + '/api/extract', { method: 'POST', body: formData });
         const json = await res.json();
 
-        if (!res.ok || !json.success) {
-            throw new Error(json.error || 'Extraction failed');
+        if (res.status === 401) {
+            doLogout();
+            return;
         }
+
+        if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
 
         state.uploading = false;
         state.receipt = json.data;
@@ -824,7 +961,6 @@ async function handleFile(file) {
             '<span style="color:#1F2937;font-weight:600;">Review</span>';
 
         document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-
         toast('Receipt analyzed successfully!', 'success');
         render();
 
@@ -836,7 +972,96 @@ async function handleFile(file) {
     }
 }
 
-/* ── Save / Flag Actions ── */
+/* ── Post to Jobber ── */
+async function postToJobber() {
+    if (!state.receipt || state.postingToJobber) return;
+    const r = state.receipt;
+
+    const jobNo = document.getElementById('f-jobno')?.value?.trim() || r.jobNo;
+    if (!jobNo) {
+        toast('Enter a job number before posting to Jobber', 'warning');
+        document.getElementById('f-jobno')?.focus();
+        return;
+    }
+
+    const vendor = document.getElementById('f-vendor')?.value || r.vendor;
+    const invoice = document.getElementById('f-invoice')?.value || r.invoiceNo;
+    const date = document.getElementById('f-date')?.value || r.date;
+    const category = document.getElementById('f-category')?.value || state.settings.category;
+
+    state.postingToJobber = true;
+    render();
+
+    try {
+        // Step 1: look up the Jobber job by job number
+        const jobRes = await authedFetch(API_BASE + '/api/jobber-job?jobNumber=' + encodeURIComponent(jobNo));
+        const jobData = await jobRes.json();
+
+        if (!jobRes.ok) throw new Error(jobData.error || 'Jobber job lookup failed');
+
+        const jobs = jobData.jobs || [];
+        if (jobs.length === 0) {
+            throw new Error(`No Jobber job found with job number "${jobNo}". Check the number and try again.`);
+        }
+
+        const job = jobs[0];
+
+        // Step 2: create the expense
+        const expRes = await authedFetch(API_BASE + '/api/post-to-jobber', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jobId: job.id,
+                vendor,
+                invoiceNo: invoice,
+                date,
+                total: r.total,
+                tax: r.tax,
+                subtotal: r.subtotal,
+                category: category.toUpperCase(),
+                items: r.items
+            })
+        });
+
+        const expData = await expRes.json();
+        if (!expRes.ok || !expData.success) throw new Error(expData.error || 'Failed to create expense in Jobber');
+
+        state.postingToJobber = false;
+        state.receipt.jobberExpenseId = expData.expense?.id || 'created';
+        state.receipt.jobNo = jobNo;
+        state.receipt.jobStatus = 'found';
+
+        // Save to history as "jobber" status
+        const now = new Date();
+        const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+            now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+        state.history.unshift({
+            id: genId(),
+            vendor,
+            date,
+            amount: r.total,
+            jobNo,
+            status: 'jobber',
+            invoiceNo: invoice,
+            category,
+            savedAt,
+            jobberExpenseId: expData.expense?.id
+        });
+
+        updateBadge();
+        toast(`Posted to Jobber — Job #${jobNo} / ${escHtml(job.title || '')}`, 'success', 5000);
+        render();
+
+    } catch (err) {
+        state.postingToJobber = false;
+        render();
+        toast('Jobber error: ' + (err.message || 'Unknown error'), 'error', 6000);
+        console.error(err);
+    }
+}
+
+/* ── Save Only (local history) ── */
 function saveReceipt() {
     if (!state.receipt) return;
     const r = state.receipt;
@@ -860,16 +1085,11 @@ function saveReceipt() {
         status: 'posted',
         invoiceNo: invoice,
         category,
-        savedAt,
-        items: r.items,
-        subtotal: r.subtotal,
-        tax: r.tax,
-        total: r.total,
-        confidence: r.confidence
+        savedAt
     });
 
     updateBadge();
-    toast('Receipt saved to history' + (jobNo ? ' — Job: ' + jobNo : ''), 'success');
+    toast('Receipt saved to history', 'success');
     navigate('upload');
 }
 
@@ -892,7 +1112,7 @@ function flagError() {
         status: 'error',
         invoiceNo: r.invoiceNo,
         savedAt,
-        error: jobNo ? 'Manually flagged for review' : 'No job number (PO Box) found on receipt'
+        error: jobNo ? 'Manually flagged for review' : 'No job number found on receipt'
     });
 
     updateBadge();
@@ -938,11 +1158,6 @@ function escHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
-
-/* ── Init ── */
-checkHealth();
-updateBadge();
-render();
 </script>
 </body>
 </html>
