@@ -744,70 +744,72 @@ app.post('/api/create-expense', async (req, res) => {
 
     const numStr = String(num);
 
-    // Search Jobber for the job — uses GraphQL variables (not string interpolation)
-    async function searchJobs(term, includeAllStatuses = false) {
-      // Try with status filter to include completed/archived jobs
-      if (includeAllStatuses) {
-        const result = await jobberGQL(`
-          query FindJob($term: String!) {
-            jobs(first: 100, searchTerm: $term, filter: { status: [ACTIVE, COMPLETED, ARCHIVED, ON_HOLD, LATE, REQUIRES_INVOICING, TODAY, UPCOMING, UNSCHEDULED, ACTION_REQUIRED, OVERDUE, PAST_DUE] }) {
-              nodes { id jobNumber title }
-            }
-          }
-        `, { term });
-        // If status filter is unsupported in this API version, fall back silently
-        if (!result.errors?.length) return result;
-      }
-      return jobberGQL(`
+    let job = null;
+    let lastError = null;
+
+    // Strategy 1: searchTerm (fast — works if Jobber indexes job numbers)
+    for (const term of [numStr, `#${numStr}`]) {
+      const result = await jobberGQL(`
         query FindJob($term: String!) {
           jobs(first: 100, searchTerm: $term) {
             nodes { id jobNumber title }
           }
         }
       `, { term });
-    }
 
-    // Try to find the job — Jobber's default search may only return active jobs
-    let job = null;
-    let lastError = null;
+      console.log(`Jobber search (term="${term}"):`, JSON.stringify(result));
 
-    // Round 1: search with default status filter (active jobs)
-    for (const term of [numStr, `#${numStr}`]) {
-      const jobResult = await searchJobs(term);
-
-      console.log(`Jobber job lookup (term="${term}"):`, JSON.stringify(jobResult));
-
-      if (jobResult.errors?.length) {
-        const gqlMsg = jobResult.errors[0].message || '';
-        if (/unauthori|token|auth/i.test(gqlMsg)) {
+      if (result.errors?.length) {
+        const msg = result.errors[0].message || '';
+        if (/unauthori|token|auth/i.test(msg)) {
           return res.status(401).json({
             error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.'
           });
         }
-        lastError = gqlMsg;
+        lastError = msg;
         continue;
       }
 
-      const nodes = jobResult.data?.jobs?.nodes || [];
+      const nodes = result.data?.jobs?.nodes || [];
       job = nodes.find(j => String(j.jobNumber) === numStr);
       if (job) break;
     }
 
-    // Round 2: if not found, retry with all statuses (catches completed/archived jobs)
+    // Strategy 2: paginate through all jobs (slower but reliable)
     if (!job) {
-      for (const term of [numStr, `#${numStr}`]) {
-        const jobResult = await searchJobs(term, true);
+      console.log(`Jobber search missed #${numStr}, falling back to pagination...`);
+      let cursor = null;
+      for (let page = 0; page < 10 && !job; page++) {
+        const vars = cursor ? { cursor } : {};
+        const query = cursor
+          ? `query PageJobs($cursor: String!) {
+              jobs(first: 100, after: $cursor) {
+                nodes { id jobNumber title }
+                pageInfo { hasNextPage endCursor }
+              }
+            }`
+          : `query PageJobs {
+              jobs(first: 100) {
+                nodes { id jobNumber title }
+                pageInfo { hasNextPage endCursor }
+              }
+            }`;
 
-        console.log(`Jobber job lookup ALL statuses (term="${term}"):`, JSON.stringify(jobResult));
+        const result = await jobberGQL(query, vars);
 
-        if (jobResult.errors?.length) {
-          lastError = jobResult.errors[0].message || lastError;
-          continue;
+        if (result.errors?.length) {
+          lastError = result.errors[0].message || lastError;
+          break;
         }
 
-        const nodes = jobResult.data?.jobs?.nodes || [];
+        const nodes = result.data?.jobs?.nodes || [];
+        const pageInfo = result.data?.jobs?.pageInfo || {};
+
+        console.log(`Jobber page ${page + 1}: ${nodes.length} jobs, hasNext=${pageInfo.hasNextPage}`);
+
         job = nodes.find(j => String(j.jobNumber) === numStr);
-        if (job) break;
+        if (job || !pageInfo.hasNextPage) break;
+        cursor = pageInfo.endCursor;
       }
     }
 
