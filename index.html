@@ -361,7 +361,8 @@ async function checkHealth() {
         const res = await authedFetch(API_BASE + '/api/health');
         if (res.ok) {
             const data = await res.json();
-            el.innerHTML = '<i class="fa-solid fa-circle" style="color:#059669;font-size:8px;margin-right:4px;"></i>AI Ready (Gemini)';
+            const modelName = data.model || 'Gemini';
+            el.innerHTML = `<i class="fa-solid fa-circle" style="color:#059669;font-size:8px;margin-right:4px;"></i>AI Ready (${modelName})`;
             el.style.color = '#059669';
             if (jel) {
                 if (data.jobberConfigured) {
@@ -769,7 +770,7 @@ function settingsHTML() {
                 <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">AI Extraction</div>
                 <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
                     <span style="color:#6B7280;">Model</span>
-                    <span style="font-weight:600;color:#374151;">Gemini 1.5 Pro (Vision)</span>
+                    <span id="settings-model" style="font-weight:600;color:#374151;">Detecting...</span>
                     <span style="color:#6B7280;">API Status</span>
                     <span id="settings-api-status" style="color:#6B7280;">Checking...</span>
                     <span style="color:#6B7280;">PO Detection</span>
@@ -781,10 +782,19 @@ function settingsHTML() {
                 <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
                     <span style="color:#6B7280;">Status</span>
                     <span id="settings-jobber-status" style="color:#6B7280;">Checking...</span>
-                    <span style="color:#6B7280;">API Key</span>
-                    <span style="color:#374151;">Set via <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">JOBBER_API_KEY</code> env var on Vercel</span>
+                    <span style="color:#6B7280;">Auth</span>
+                    <span style="color:#374151;">OAuth 2.0 via <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">JOBBER_CLIENT_ID</code> + <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">JOBBER_CLIENT_SECRET</code></span>
+                    <span style="color:#6B7280;">Connect</span>
+                    <span id="jobber-connect-wrap">
+                        <button class="btn btn-jobber btn-sm" id="btn-jobber-connect" onclick="connectJobber()" style="display:none;">
+                            <i class="fa-solid fa-link"></i> Connect Jobber
+                        </button>
+                        <span id="jobber-connect-ok" style="display:none;font-size:12px;color:#059669;font-weight:600;"><i class="fa-solid fa-check-circle"></i> Connected via OAuth</span>
+                    </span>
+                    <span style="color:#6B7280;">Blob Storage</span>
+                    <span id="settings-blob-status" style="color:#6B7280;">Checking...</span>
                     <span style="color:#6B7280;">Posting</span>
-                    <span style="color:#374151;">Creates expense on matching Jobber job</span>
+                    <span style="color:#374151;">Creates expense on matching Jobber job + attaches receipt URL</span>
                 </div>
             </div>
             <div class="settings-section">
@@ -816,7 +826,7 @@ function settingsHTML() {
                 <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">About</div>
                 <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;font-size:13px;">
                     <span style="color:#6B7280;">App</span>
-                    <span style="color:#374151;">ReceiptFlow v1.0</span>
+                    <span style="color:#374151;">ReceiptFlow v2.0</span>
                     <span style="color:#6B7280;">Company</span>
                     <span style="color:#374151;">CSK Electric</span>
                     <span style="color:#6B7280;">Auth</span>
@@ -825,6 +835,22 @@ function settingsHTML() {
             </div>
         </div>
     </div>`;
+}
+
+/* ── Jobber OAuth connect ── */
+async function connectJobber() {
+    try {
+        const res = await authedFetch(API_BASE + '/api/jobber-status');
+        const data = await res.json();
+        if (data.authUrl) {
+            window.open(data.authUrl, '_blank', 'width=600,height=700');
+            toast('Complete the Jobber authorisation in the popup, then refresh this page.', 'info', 7000);
+        } else {
+            toast('No OAuth URL available. Check JOBBER_CLIENT_ID is set.', 'error');
+        }
+    } catch (err) {
+        toast('Could not get Jobber auth URL: ' + err.message, 'error');
+    }
 }
 
 /* ── Event Binding ── */
@@ -885,18 +911,45 @@ function bind() {
     // Settings page status checks
     const sapiEl = document.getElementById('settings-api-status');
     const sjobberEl = document.getElementById('settings-jobber-status');
+    const sModelEl = document.getElementById('settings-model');
+    const sBlobEl = document.getElementById('settings-blob-status');
+    const bConnect = document.getElementById('btn-jobber-connect');
+    const connectOk = document.getElementById('jobber-connect-ok');
+
     if (sapiEl) {
         authedFetch(API_BASE + '/api/health').then(r => r.ok ? r.json() : null).then(d => {
             if (d) {
-                sapiEl.innerHTML = '<span style="color:#059669;font-weight:600;">Connected — Gemini 1.5 Pro</span>';
-                if (sjobberEl) {
-                    sjobberEl.innerHTML = d.jobberConfigured
-                        ? '<span style="color:#4F46E5;font-weight:600;">Connected</span>'
-                        : '<span style="color:#D97706;font-weight:600;">JOBBER_API_KEY not set</span>';
-                }
+                sapiEl.innerHTML = `<span style="color:#059669;font-weight:600;">Connected — ${d.model || 'Gemini'}</span>`;
+                if (sModelEl) sModelEl.textContent = (d.model || 'Gemini') + ' (Vision)';
+                if (sBlobEl) sBlobEl.innerHTML = d.blobConfigured
+                    ? '<span style="color:#059669;font-weight:600;">Configured ✓</span>'
+                    : '<span style="color:#D97706;font-weight:600;">BLOB_READ_WRITE_TOKEN not set</span>';
             }
         }).catch(() => {
             if (sapiEl) sapiEl.innerHTML = '<span style="color:#DC2626;">Offline</span>';
+        });
+
+        // Check Jobber OAuth status
+        authedFetch(API_BASE + '/api/jobber-status').then(r => r.ok ? r.json() : null).then(d => {
+            if (!d) return;
+            if (sjobberEl) {
+                sjobberEl.innerHTML = d.connected
+                    ? '<span style="color:#059669;font-weight:600;">Connected ✓</span>'
+                    : (d.hasClientId
+                        ? '<span style="color:#D97706;font-weight:600;">Not authorized — click Connect</span>'
+                        : '<span style="color:#DC2626;font-weight:600;">JOBBER_CLIENT_ID not set</span>');
+            }
+            if (bConnect && connectOk) {
+                if (d.connected) {
+                    bConnect.style.display = 'none';
+                    connectOk.style.display = 'inline';
+                } else if (d.authUrl) {
+                    bConnect.style.display = 'inline-flex';
+                    connectOk.style.display = 'none';
+                }
+            }
+        }).catch(() => {
+            if (sjobberEl) sjobberEl.innerHTML = '<span style="color:#DC2626;">Could not check status</span>';
         });
     }
 
@@ -1019,7 +1072,8 @@ async function postToJobber() {
                 tax: r.tax,
                 subtotal: r.subtotal,
                 category: category.toUpperCase(),
-                items: r.items
+                items: r.items,
+                blobUrl: r.blobUrl || null
             })
         });
 
