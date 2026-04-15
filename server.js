@@ -745,7 +745,19 @@ app.post('/api/create-expense', async (req, res) => {
     const numStr = String(num);
 
     // Search Jobber for the job — uses GraphQL variables (not string interpolation)
-    async function searchJobs(term) {
+    async function searchJobs(term, includeAllStatuses = false) {
+      // Try with status filter to include completed/archived jobs
+      if (includeAllStatuses) {
+        const result = await jobberGQL(`
+          query FindJob($term: String!) {
+            jobs(first: 100, searchTerm: $term, filter: { status: [ACTIVE, COMPLETED, ARCHIVED, ON_HOLD, LATE, REQUIRES_INVOICING, TODAY, UPCOMING, UNSCHEDULED, ACTION_REQUIRED, OVERDUE, PAST_DUE] }) {
+              nodes { id jobNumber title }
+            }
+          }
+        `, { term });
+        // If status filter is unsupported in this API version, fall back silently
+        if (!result.errors?.length) return result;
+      }
       return jobberGQL(`
         query FindJob($term: String!) {
           jobs(first: 100, searchTerm: $term) {
@@ -755,11 +767,12 @@ app.post('/api/create-expense', async (req, res) => {
       `, { term });
     }
 
-    // Try multiple search terms — Jobber's searchTerm is fuzzy and may miss exact job numbers
+    // Try to find the job — Jobber's default search may only return active jobs
     let job = null;
     let lastError = null;
 
-    for (const term of [numStr, `#${numStr}`, `Job ${numStr}`]) {
+    // Round 1: search with default status filter (active jobs)
+    for (const term of [numStr, `#${numStr}`]) {
       const jobResult = await searchJobs(term);
 
       console.log(`Jobber job lookup (term="${term}"):`, JSON.stringify(jobResult));
@@ -776,9 +789,26 @@ app.post('/api/create-expense', async (req, res) => {
       }
 
       const nodes = jobResult.data?.jobs?.nodes || [];
-      // Match by string comparison (more reliable than numeric)
       job = nodes.find(j => String(j.jobNumber) === numStr);
       if (job) break;
+    }
+
+    // Round 2: if not found, retry with all statuses (catches completed/archived jobs)
+    if (!job) {
+      for (const term of [numStr, `#${numStr}`]) {
+        const jobResult = await searchJobs(term, true);
+
+        console.log(`Jobber job lookup ALL statuses (term="${term}"):`, JSON.stringify(jobResult));
+
+        if (jobResult.errors?.length) {
+          lastError = jobResult.errors[0].message || lastError;
+          continue;
+        }
+
+        const nodes = jobResult.data?.jobs?.nodes || [];
+        job = nodes.find(j => String(j.jobNumber) === numStr);
+        if (job) break;
+      }
     }
 
     if (lastError && !job) {
