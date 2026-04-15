@@ -169,6 +169,25 @@ function extractFieldsFromLlama(content) {
   const tables = parseTables(content);
   const lmap = {};
 
+  // Labels where we want the largest monetary value (grand total > line total)
+  const MONETARY_LABELS = new Set([
+    'TOTAL', 'GRAND TOTAL', 'INVOICE TOTAL', 'AMOUNT DUE',
+    'BALANCE DUE', 'TOTAL DUE', 'SUBTOTAL', 'GROSS TOTAL'
+  ]);
+
+  const setLmap = (lbl, val) => {
+    if (MONETARY_LABELS.has(lbl)) {
+      const newN = parseFloat((val || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
+      const oldN = parseFloat((lmap[lbl] || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
+      // For monetary totals, keep the larger value (grand total > line item total)
+      if (!isNaN(newN) && (isNaN(oldN) || newN > oldN)) {
+        lmap[lbl] = val;
+      }
+    } else {
+      lmap[lbl] = val;
+    }
+  };
+
   for (const table of tables) {
     for (let r = 0; r < table.length; r++) {
       const row = table[r];
@@ -189,7 +208,7 @@ function extractFieldsFromLlama(content) {
             const lbl = row[c].toUpperCase().replace(/\s+/g, ' ').trim();
             const val = (vRow[c] || '').trim();
             if (lbl.length > 1 && val && !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val)) {
-              lmap[lbl] = val;
+              setLmap(lbl, val);
             }
           }
         }
@@ -206,7 +225,7 @@ function extractFieldsFromLlama(content) {
             !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val) &&
             val !== lbl
           ) {
-            lmap[lbl] = val;
+            setLmap(lbl, val);
             c++;
           }
         }
@@ -385,25 +404,29 @@ function extractFieldsFromLlama(content) {
   }
 
   if (total === null) {
-    const rawTotal =
-      lmap['TOTAL'] ||
-      lmap['GRAND TOTAL'] ||
-      lmap['INVOICE TOTAL'] ||
-      lmap['AMOUNT DUE'] ||
-      lmap['BALANCE DUE'] ||
-      lmap['TOTAL DUE'] ||
-      lmap['SUBTOTAL'] ||
-      null;
+    // Prefer the most specific total labels first, then fall back to generic TOTAL
+    const TOTAL_LABELS = [
+      'GRAND TOTAL', 'INVOICE TOTAL', 'AMOUNT DUE', 'BALANCE DUE',
+      'TOTAL DUE', 'TOTAL', 'SUBTOTAL'
+    ];
 
-    if (rawTotal) {
+    for (const lbl of TOTAL_LABELS) {
+      const rawTotal = lmap[lbl];
+      if (!rawTotal) continue;
       const n = parseFloat(rawTotal.replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
-      if (!isNaN(n) && n > 0) total = n;
+      if (!isNaN(n) && n > 0) {
+        total = n;
+        break;
+      }
     }
   }
 
+  // Regex fallback: find the LAST "TOTAL" value in the document (grand total is at the bottom)
   if (total === null) {
-    const tm = content.match(/\bTOTAL\b[\s:$]*(\d[\d,]*\.\d{2})/i);
-    if (tm) total = parseFloat(tm[1].replace(/,/g, ''));
+    const allTotals = [...content.matchAll(/\bTOTAL\b[\s:$]*([\d][\d,]*\.\d{2})\s*[-]?/gi)];
+    if (allTotals.length > 0) {
+      total = parseFloat(allTotals[allTotals.length - 1][1].replace(/,/g, ''));
+    }
   }
 
   if (total === null && itemsSum > 0) {
