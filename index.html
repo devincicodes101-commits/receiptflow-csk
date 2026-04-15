@@ -1039,67 +1039,43 @@ async function handleFile(file) {
 async function postToJobber() {
     if (!state.receipt || state.postingToJobber) return;
     const r = state.receipt;
-
     const jobNo = document.getElementById('f-jobno')?.value?.trim() || r.jobNo;
     if (!jobNo) {
         toast('Enter a job number before posting to Jobber', 'warning');
         document.getElementById('f-jobno')?.focus();
         return;
     }
-
     const vendor = document.getElementById('f-vendor')?.value || r.vendor;
     const invoice = document.getElementById('f-invoice')?.value || r.invoiceNo;
     const date = document.getElementById('f-date')?.value || r.date;
     const category = document.getElementById('f-category')?.value || state.settings.category;
-
     state.postingToJobber = true;
     render();
-
     try {
-        // Step 1: look up the Jobber job by job number
-        const jobRes = await authedFetch(API_BASE + '/api/jobber-job?jobNumber=' + encodeURIComponent(jobNo));
-        const jobData = await jobRes.json();
-
-        if (!jobRes.ok) throw new Error(jobData.error || 'Jobber job lookup failed');
-
-        const jobs = jobData.jobs || [];
-        if (jobs.length === 0) {
-            throw new Error(`No Jobber job found with job number "${jobNo}". Check the number and try again.`);
-        }
-
-        const job = jobs[0];
-
-        // Step 2: create the expense
-        const expRes = await authedFetch(API_BASE + '/api/post-to-jobber', {
+        const expRes = await authedFetch(API_BASE + '/api/create-expense', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                jobId: job.id,
                 vendor,
                 invoiceNo: invoice,
                 date,
                 total: r.total,
-                tax: r.tax,
-                subtotal: r.subtotal,
-                category: category.toUpperCase(),
-                items: r.items,
-                blobUrl: r.blobUrl || null
+                jobNo,
+                category,
+                receiptBlobUrl: r.receiptBlobUrl || null
             })
         });
-
         const expData = await expRes.json();
-        if (!expRes.ok || !expData.success) throw new Error(expData.error || 'Failed to create expense in Jobber');
-
+        if (!expRes.ok || !expData.success) {
+            throw new Error(expData.error || 'Failed to create expense in Jobber');
+        }
         state.postingToJobber = false;
-        state.receipt.jobberExpenseId = expData.expense?.id || 'created';
+        state.receipt.jobberExpenseId = expData.expenseId || 'created';
         state.receipt.jobNo = jobNo;
         state.receipt.jobStatus = 'found';
-
-        // Save to history as "jobber" status
         const now = new Date();
         const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
             now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-
         state.history.unshift({
             id: genId(),
             vendor,
@@ -1110,13 +1086,13 @@ async function postToJobber() {
             invoiceNo: invoice,
             category,
             savedAt,
-            jobberExpenseId: expData.expense?.id
+            jobberExpenseId: expData.expenseId || null
         });
-
         updateBadge();
-        toast(`Posted to Jobber — Job #${jobNo} / ${escHtml(job.title || '')}`, 'success', 5000);
-        render();
-
+        toast(`Posted to Jobber — Job #${jobNo}`, 'success', 5000);
+        setTimeout(() => {
+            navigate('upload');
+        }, 1000);
     } catch (err) {
         state.postingToJobber = false;
         render();
