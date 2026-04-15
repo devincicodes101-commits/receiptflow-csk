@@ -17,7 +17,16 @@ app.use(cookieParser((process.env.SESSION_SECRET || 'fallback-secret-change-me')
 
 // ── Auth middleware — protects all /api routes except login + check ──
 app.use((req, res, next) => {
-  const open = ['/api/login', '/api/logout', '/api/auth/check', '/api/auth/callback', '/api/auth/jobber', '/api/auth/status', '/api/health'];
+  const open = [
+    '/api/login',
+    '/api/logout',
+    '/api/auth/check',
+    '/api/auth/callback',
+    '/api/auth/jobber',
+    '/api/auth/status',
+    '/api/jobber-status',
+    '/api/health'
+  ];
   if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
   const session = req.signedCookies?.rf_session;
   if (session) return next();
@@ -279,7 +288,7 @@ function extractFieldsFromLlama(content) {
       for (const cell of row) {
         const cleaned = cell.replace(/\s+\d+$/, '').replace(/\s*[-+]\s*$/, '').trim();
         const isNumeric = /^\$?[\d,.]+$/.test(cleaned) || cleaned.length === 0 ||
-                          /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN)$/i.test(cleaned);
+          /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN)$/i.test(cleaned);
         if (!isNumeric && cleaned.length > desc.length) desc = cleaned;
       }
 
@@ -413,13 +422,13 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         imageDataUrl,
         receiptBlobUrl,
         isPdf: mimeType === 'application/pdf',
-        vendor:    fields.vendor    || null,
+        vendor: fields.vendor || null,
         invoiceNo: fields.invoiceNo || null,
-        date:      fields.date      || null,
-        total:     fields.total     || null,
-        jobNo:     fields.jobNo     || null,
+        date: fields.date || null,
+        total: fields.total || null,
+        jobNo: fields.jobNo || null,
         jobStatus: fields.jobNo ? 'found' : 'missing',
-        items:     fields.items     || [],
+        items: fields.items || [],
       }
     });
 
@@ -434,7 +443,14 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', model: 'gemini-1.5-flash-latest' });
+  res.json({
+    status: 'ok',
+    model: 'gemini-1.5-flash-latest',
+    jobberConfigured: !!(
+      (process.env.JOBBER_CLIENT_ID || '').trim() &&
+      (process.env.JOBBER_CLIENT_SECRET || '').trim()
+    )
+  });
 });
 
 // ── Upstash Redis helpers ──
@@ -551,6 +567,41 @@ app.get('/api/auth/status', async (req, res) => {
     res.json({ connected: !!(token || refresh) });
   } catch {
     res.json({ connected: false });
+  }
+});
+
+// ── Frontend-compatible Jobber status route ──
+app.get('/api/jobber-status', async (req, res) => {
+  try {
+    const token = await redisGet('jobber_access_token');
+    const refresh = await redisGet('jobber_refresh_token');
+
+    const hasClientId = !!(process.env.JOBBER_CLIENT_ID || '').trim();
+    const hasClientSecret = !!(process.env.JOBBER_CLIENT_SECRET || '').trim();
+    const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
+
+    let authUrl = null;
+    if (hasClientId && hasClientSecret && appUrl) {
+      const url = new URL('https://api.getjobber.com/api/oauth/authorize');
+      url.searchParams.set('client_id', (process.env.JOBBER_CLIENT_ID || '').trim());
+      url.searchParams.set('redirect_uri', `${appUrl}/api/auth/callback`);
+      url.searchParams.set('response_type', 'code');
+      authUrl = url.toString();
+    }
+
+    res.json({
+      connected: !!(token || refresh),
+      hasClientId,
+      hasClientSecret,
+      authUrl
+    });
+  } catch (err) {
+    res.json({
+      connected: false,
+      hasClientId: !!(process.env.JOBBER_CLIENT_ID || '').trim(),
+      hasClientSecret: !!(process.env.JOBBER_CLIENT_SECRET || '').trim(),
+      authUrl: null
+    });
   }
 });
 
