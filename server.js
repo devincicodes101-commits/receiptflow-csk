@@ -26,7 +26,8 @@ app.use((req, res, next) => {
     '/api/auth/jobber',
     '/api/auth/status',
     '/api/jobber-status',
-    '/api/health'
+    '/api/health',
+    '/api/jobber-debug'
   ];
 
   if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
@@ -542,6 +543,38 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     }
 
     return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+// ── Jobber debug endpoint (visit /api/jobber-debug?job=1249 in browser) ──
+app.get('/api/jobber-debug', async (req, res) => {
+  try {
+    const jobNum = req.query.job || '1249';
+    const token = await getJobberToken();
+
+    // Test 1: search
+    const searchResult = await jobberGQL(`
+      query { jobs(first: 5, searchTerm: "${jobNum}") { nodes { id jobNumber title } } }
+    `);
+
+    // Test 2: list first 5 jobs (any jobs at all?)
+    const listResult = await jobberGQL(`
+      query { jobs(first: 5) { nodes { id jobNumber title } pageInfo { hasNextPage endCursor } } }
+    `);
+
+    // Test 3: introspect Job type fields
+    const schemaResult = await jobberGQL(`
+      query { __type(name: "Job") { fields { name } } }
+    `);
+
+    return res.json({
+      tokenExists: !!token,
+      search: searchResult,
+      list: listResult,
+      jobFields: schemaResult?.data?.__type?.fields?.map(f => f.name) || schemaResult
+    });
+  } catch (err) {
+    return res.json({ error: err.message });
   }
 });
 
