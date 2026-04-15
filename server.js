@@ -2,194 +2,68 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const { put: blobPut } = require('@vercel/blob');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── API URLs ──────────────────────────────────────────────────────────────
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const JOBBER_API_URL = 'https://api.getjobber.com/api/graphql';
-const JOBBER_TOKEN_URL = 'https://api.getjobber.com/api/oauth/token';
-
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser(process.env.SESSION_SECRET || 'fallback-secret-change-me'));
 
-// ── In-memory Jobber token cache ──────────────────────────────────────────
-let jobberTokenCache = {
-  access_token: process.env.JOBBER_API_KEY || null,  // fallback to static key if set
-  token_type: 'Bearer',
-  expires_at: process.env.JOBBER_API_KEY ? Date.now() + 999999999 : 0,
-  refresh_token: process.env.JOBBER_REFRESH_TOKEN || null
-};
+// ── Auth middleware — protects all /api routes except login + check ──
+app.use((req, res, next) => {
+  const open = ['/api/login', '/api/auth/check', '/api/auth/callback', '/api/auth/jobber'];
+  if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
+  const session = req.signedCookies?.rf_session;
+  if (session) return next();
+  return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+});
 
-async function getJobberToken() {
-  // If we have a valid cached token, return it
-  if (jobberTokenCache.access_token && Date.now() < jobberTokenCache.expires_at - 60000) {
-    return jobberTokenCache.access_token;
+// ── Login ──
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required.' });
   }
 
-  const clientId = process.env.JOBBER_CLIENT_ID;
-  const clientSecret = process.env.JOBBER_CLIENT_SECRET;
+  const users = [
+    { u: process.env.AUTH_USER,   p: process.env.AUTH_PASS   },
+    { u: process.env.AUTH_USER_2, p: process.env.AUTH_PASS_2 },
+    { u: process.env.AUTH_USER_3, p: process.env.AUTH_PASS_3 },
+  ].filter(x => x.u && x.p);
 
-  if (!clientId || !clientSecret) {
-    throw new Error('JOBBER_CLIENT_ID and JOBBER_CLIENT_SECRET are required');
-  }
+  const match = users.find(x => x.u === username && x.p === password);
+  if (!match) return res.status(401).json({ error: 'Invalid username or password.' });
 
-  // Try refresh token flow first
-  if (jobberTokenCache.refresh_token) {
-    try {
-      const res = await fetch(JOBBER_TOKEN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: jobberTokenCache.refresh_token
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.access_token) {
-        jobberTokenCache = {
-          access_token: data.access_token,
-          token_type: data.token_type || 'Bearer',
-          expires_at: Date.now() + (data.expires_in || 3600) * 1000,
-          refresh_token: data.refresh_token || jobberTokenCache.refresh_token
-        };
-        console.log('[Jobber] Token refreshed via refresh_token');
-        return jobberTokenCache.access_token;
-      }
-    } catch (e) {
-      console.warn('[Jobber] Refresh token failed:', e.message);
-    }
-  }
+  res.cookie('rf_session', username, {
+    signed: true,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  });
+  res.json({ success: true, username });
+});
 
-  // Try client_credentials flow (works for server-to-server apps)
-  try {
-    const res = await fetch(JOBBER_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret
-      })
-    });
-    const data = await res.json();
-    if (res.ok && data.access_token) {
-      jobberTokenCache = {
-        access_token: data.access_token,
-        token_type: data.token_type || 'Bearer',
-        expires_at: Date.now() + (data.expires_in || 3600) * 1000,
-        refresh_token: data.refresh_token || null
-      };
-      console.log('[Jobber] Token obtained via client_credentials');
-      return jobberTokenCache.access_token;
-    }
-    // Jobber might not support client_credentials — fall through to static key
-    console.warn('[Jobber] client_credentials not supported:', JSON.stringify(data));
-  } catch (e) {
-    console.warn('[Jobber] client_credentials flow failed:', e.message);
-  }
+// ── Logout ──
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('rf_session');
+  res.json({ success: true });
+});
 
-  // Last resort: use JOBBER_API_KEY directly (personal access token / static key)
-  if (process.env.JOBBER_API_KEY) {
-    return process.env.JOBBER_API_KEY;
-  }
+// ── Auth check ──
+app.get('/api/auth/check', (req, res) => {
+  const session = req.signedCookies?.rf_session;
+  if (session) return res.json({ authenticated: true, username: session });
+  return res.status(401).json({ authenticated: false });
+});
 
-  throw new Error('Could not obtain Jobber access token. Set JOBBER_API_KEY or configure OAuth.');
-}
-
-// ── Gemini model selection ────────────────────────────────────────────────
-let cachedGeminiModel = null;
-
-async function getBestGeminiModel() {
-  if (cachedGeminiModel) return cachedGeminiModel;
-
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not set');
-
-  try {
-    const res = await fetch(`${GEMINI_BASE}/models?key=${key}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error('Models list failed: ' + JSON.stringify(data.error));
-
-    const PREFERRED = [
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash',
-      'gemini-pro-vision',
-      'gemini-1.0-pro-vision'
-    ];
-
-    const available = (data.models || [])
-      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-      .map(m => m.name.replace('models/', ''));
-
-    console.log('[Gemini] Available models:', available);
-
-    for (const pref of PREFERRED) {
-      if (available.includes(pref)) {
-        cachedGeminiModel = pref;
-        console.log('[Gemini] Selected model:', pref);
-        return pref;
-      }
-    }
-
-    // Fallback: pick first multimodal capable model
-    const fallback = available.find(m => m.includes('flash') || m.includes('pro'));
-    if (fallback) {
-      cachedGeminiModel = fallback;
-      console.log('[Gemini] Fallback model:', fallback);
-      return fallback;
-    }
-
-    // Default
-    cachedGeminiModel = 'gemini-1.5-pro';
-    return cachedGeminiModel;
-  } catch (err) {
-    console.warn('[Gemini] Model detection failed, using default:', err.message);
-    cachedGeminiModel = 'gemini-1.5-pro';
-    return cachedGeminiModel;
-  }
-}
-
-// ── Basic Auth Middleware ──────────────────────────────────────────────────
-function basicAuth(req, res, next) {
-  if (req.path === '/api/health') return next();
-  if (req.path === '/api/jobber/callback') return next();
-
-  const authHeader = req.headers['authorization'];
-  if (!authHeader || !authHeader.startsWith('Basic ')) {
-    res.set('WWW-Authenticate', 'Basic realm="ReceiptFlow"');
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-
-  const base64 = authHeader.slice(6);
-  const [user, pass] = Buffer.from(base64, 'base64').toString().split(':');
-
-  const validUser = process.env.AUTH_USER || 'admin';
-  const validPass = process.env.AUTH_PASS || 'csk2024';
-
-  if (user === validUser && pass === validPass) return next();
-
-  res.set('WWW-Authenticate', 'Basic realm="ReceiptFlow"');
-  return res.status(401).json({ error: 'Invalid credentials' });
-}
-
-app.use('/api/extract', basicAuth);
-app.use('/api/post-to-jobber', basicAuth);
-app.use('/api/jobber-job', basicAuth);
-app.use('/api/models', basicAuth);
-app.use('/api/jobber-status', basicAuth);
-
-app.use(express.static('.'));
-
-// ── File upload (memory) ──────────────────────────────────────────────────
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
     if (allowed.includes(file.mimetype)) cb(null, true);
@@ -197,470 +71,579 @@ const upload = multer({
   }
 });
 
-// ── Vercel Blob upload helper ─────────────────────────────────────────────
-async function uploadToBlob(buffer, filename, mimeType) {
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!blobToken) {
-    console.warn('[Blob] BLOB_READ_WRITE_TOKEN not set — skipping blob upload');
+function extractFieldsFromLlama(content) {
+  let vendor = null, invoiceNo = null, date = null, jobNo = null, total = null;
+  const items = [];
+
+  function parseTables(content) {
+    const tbls = [];
+
+    for (const [tableHtml] of content.matchAll(/<table[\s\S]*?<\/table>/gi)) {
+      const rows = [];
+      for (const [rowHtml] of tableHtml.matchAll(/<tr[\s\S]*?<\/tr>/gi)) {
+        const cells = [];
+        for (const [, inner] of rowHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
+          const text = inner
+            .replace(/<br\s*\/?>/gi, ' ')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/\s+/g, ' ').trim();
+          cells.push(text);
+        }
+        if (cells.some(c => c.length > 0)) rows.push(cells);
+      }
+      if (rows.length) tbls.push(rows);
+    }
+
+    const htmlZapped = content.replace(/<table[\s\S]*?<\/table>/gi, '');
+    const pipeLines = htmlZapped.split('\n');
+    let mdBlock = [];
+    const flushMdBlock = () => {
+      if (mdBlock.length >= 2) tbls.push(mdBlock);
+      mdBlock = [];
+    };
+    for (const line of pipeLines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|')) { flushMdBlock(); continue; }
+      if (/^\|[\s|:-]+\|$/.test(trimmed)) continue;
+      const cells = trimmed.replace(/^\||\|$/g, '').split('|')
+        .map(c => c.trim())
+        .filter((_, i, arr) => i < arr.length);
+      if (cells.some(c => c.length > 0)) mdBlock.push(cells);
+    }
+    flushMdBlock();
+
+    return tbls;
+  }
+
+  function parseDate(str) {
+    if (!str) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    let m = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+    m = str.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
     return null;
   }
 
-  try {
-    const res = await fetch(`https://blob.vercel-storage.com/${encodeURIComponent(filename)}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${blobToken}`,
-        'Content-Type': mimeType,
-        'x-content-type': mimeType,
-        'Cache-Control': 'public, max-age=31536000'
-      },
-      body: buffer
-    });
+  const tables = parseTables(content);
+  const lmap = {};
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.warn('[Blob] Upload failed:', err);
-      return null;
+  for (const table of tables) {
+    for (let r = 0; r < table.length; r++) {
+      const row = table[r];
+
+      if (r + 1 < table.length) {
+        const vRow = table[r + 1];
+        const isLabelRow =
+          row.some(c => /^[A-Z][A-Z\s./()#-]{2,}$/.test(c)) &&
+          !row.some(c => /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(c)) &&
+          !row.some(c => /^\d+\.\d{2}$/.test(c));
+        const isValueRow =
+          vRow.some(c => c.length > 0) &&
+          !vRow.every(c => /^[A-Z][A-Z\s./()#-]{2,}$/.test(c) || c === '');
+
+        if (isLabelRow && isValueRow) {
+          for (let c = 0; c < row.length; c++) {
+            const lbl = row[c].toUpperCase().replace(/\s+/g,' ').trim();
+            const val = (vRow[c] || '').trim();
+            if (lbl.length > 1 && val && !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val))
+              lmap[lbl] = val;
+          }
+        }
+      }
+
+      const rowIsAllLabels = row.every(c => c === '' || /^[A-Z][A-Z\s./()#-]{2,}$/.test(c));
+      if (!rowIsAllLabels) {
+        for (let c = 0; c + 1 < row.length; c++) {
+          const lbl = row[c].replace(/:$/, '').toUpperCase().replace(/\s+/g,' ').trim();
+          const val = row[c + 1].trim();
+          if (/^[A-Z][A-Z\s./()#-]{2,}$/.test(lbl) && val &&
+              !/^[A-Z][A-Z\s./()#-]{4,}$/.test(val) && val !== lbl) {
+            lmap[lbl] = val;
+            c++;
+          }
+        }
+      }
     }
-
-    const data = await res.json();
-    console.log('[Blob] Uploaded:', data.url);
-    return data.url;
-  } catch (err) {
-    console.warn('[Blob] Upload error:', err.message);
-    return null;
   }
-}
 
-// ── Extraction Prompt ────────────────────────────────────────────────────
-const EXTRACTION_PROMPT = `You are an invoice parser for CSK Electric, an electrical contractor based in Abbotsford, BC.
+  const plainText = content.replace(/<table[\s\S]*?<\/table>/gi, '');
+  for (const [, lbl, val] of plainText.matchAll(/^([A-Z][A-Za-z\s./()#-]{2,}?)\s*:\s*(.+)$/gm)) {
+    const k = lbl.toUpperCase().replace(/\s+/g,' ').trim();
+    if (k && val.trim()) lmap[k] = val.trim();
+  }
 
-CRITICAL CONTEXT:
-- CSK Electric is the CUSTOMER/BUYER on these invoices — NOT the vendor. Do NOT use CSK Electric's address as the vendor address.
-- The VENDOR is the supplier/seller (e.g. Gescan, Westburne, Home Depot, etc.)
-- The vendor's address is the supplier's own address printed on their letterhead/header, NOT the "Sold To" or "Ship To" address.
+  console.log('[fields] label map:', JSON.stringify(lmap));
 
-JOB NUMBER DETECTION (very important):
-- Look for a field called: "YOUR P.O. NO", "P.O. NO", "PO NO", "PO #", "Purchase Order", "Customer PO", "Our Order No", "Ref", "Reference"
-- The value in that field is the Jobber job number — extract it EXACTLY as printed (e.g. "1408", "J-104625")
-- If you cannot find this field, set poBox to null. DO NOT guess or make up a job number.
+  const DOC_KEYWORDS = /^(invoice|receipt|packing\s*slip|counter\s*sale|return|original|copy|statement|order|quote|estimate|bill)/i;
+  const headingMatch = [...content.matchAll(/^#{1,2}\s+([A-Za-z][A-Za-z0-9\s&.,'()-]+?)$/gm)]
+    .map(m => m[1].trim())
+    .find(h => !DOC_KEYWORDS.test(h));
+  const boldMatch = content.match(/\*\*([A-Za-z][A-Za-z\s&.-]+?)\*\*/);
+  vendor = headingMatch ||
+    (boldMatch?.[1]?.trim() && !DOC_KEYWORDS.test(boldMatch[1]) ? boldMatch[1].trim() : null) ||
+    lmap['VENDOR'] || lmap['SUPPLIER'] || lmap['COMPANY'] ||
+    lmap['SOLD BY'] || lmap['BILLED BY'] || null;
 
-INVOICE DATE:
-- Use the main "Invoice Date" field. Ignore order dates or shipped dates.
-- Return in YYYY-MM-DD format.
+  invoiceNo =
+    lmap['ORDER NO'] || lmap['INVOICE NO'] || lmap['INVOICE NUMBER'] ||
+    lmap['INVOICE #'] || lmap['ORDER NUMBER'] || lmap['DOCUMENT NO'] ||
+    lmap['RECEIPT NO'] || lmap['RECEIPT NUMBER'] || lmap['TRANSACTION NO'] || null;
 
-LINE ITEMS:
-- Only list distinct product/service lines. Do not duplicate items.
-- Each line item should have a product code or description, quantity, unit price, and line total.
-- Fees, taxes, and surcharges can be separate line items.
+  const rawDate =
+    lmap['INVOICE DATE'] || lmap['DATE'] || lmap['TRANSACTION DATE'] ||
+    lmap['BILL DATE'] || lmap['SALE DATE'] || lmap['RECEIPT DATE'] ||
+    lmap['ISSUED'] || lmap['ORDER DATE'] || null;
+  date = parseDate(rawDate);
+  if (!date) {
+    const anyDate = content.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/);
+    if (anyDate) date = parseDate(anyDate[1]);
+  }
 
-TOTALS:
-- subtotal = gross total before taxes
-- tax = sum of all taxes (GST, HST, PST, etc.)
-- total = final amount due (the largest total on the invoice)
+  const JOB_LABELS = [
+    'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PO #',
+    'PURCHASE ORDER', 'PURCHASE ORDER NO', 'CUSTOMER PO', 'CUST PO',
+    'JOB NO', 'JOB #', 'JOB NUMBER', 'JOB ID',
+    'WORK ORDER', 'WORK ORDER NO', 'WO #', 'W.O. NO',
+    'YOUR REF', 'YOUR REFERENCE', 'CUSTOMER REF', 'REF NO',
+  ];
+  for (const lbl of JOB_LABELS) {
+    const val = (lmap[lbl] || '').trim();
+    if (!val) continue;
+    let m = val.match(/^(\d{3,7})$/);
+    if (m) { jobNo = m[1]; break; }
+    m = val.match(/^(\d{3,7})[-\s]/);
+    if (m) { jobNo = m[1]; break; }
+  }
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
-{
-  "vendor": "the supplier/seller company name",
-  "address": "the supplier's own address from their letterhead (NOT CSK Electric's address)",
-  "invoiceNo": "invoice number",
-  "date": "YYYY-MM-DD",
-  "poBox": "value from YOUR P.O. NO or PO# field exactly as printed, null if not present",
-  "poFieldLabel": "the exact label text of the PO field found (e.g. 'YOUR P.O. NO', 'PO #')",
-  "items": [
-    {
-      "desc": "product code + description",
-      "qty": number or null,
-      "unit": unit price as number or null,
-      "total": line total as number
+  let itemsTable = null, totalCol = -1;
+  let itemsHeaderRow = 0;
+  for (const table of tables) {
+    for (let r = 0; r < table.length; r++) {
+      const upper = table[r].map(c => c.toUpperCase().trim());
+      const tc = upper.findIndex(c => c === 'TOTAL' || c === 'AMOUNT' || c === 'EXT. PRICE' || c === 'EXT PRICE');
+      const hasDesc = upper.some(c => c.includes('DESCRIPTION') || c.includes('PRODUCT') || c.includes('ITEM') || c.includes('SERVICE'));
+      const hasPrice = upper.some(c => c.includes('PRICE') || c === 'RATE' || c === 'AMOUNT');
+      if (tc >= 0 && (hasDesc || hasPrice)) {
+        itemsTable = table; totalCol = tc; itemsHeaderRow = r;
+        break;
+      }
     }
-  ],
-  "subtotal": number,
-  "tax": number,
-  "total": number,
-  "confidence": "high" | "medium" | "low",
-  "notes": "any observations"
+    if (itemsTable) break;
+  }
+
+  let itemsSum = 0;
+  let lastDesc = '';
+
+  if (itemsTable && totalCol >= 0) {
+    for (let ri = itemsHeaderRow + 1; ri < itemsTable.length; ri++) {
+      const row = itemsTable[ri];
+      const parseNum = (cell) => {
+        const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
+        const n = parseFloat(s);
+        return (!isNaN(n) && n > 0) ? n : null;
+      };
+
+      const nums = row.map(parseNum).filter(n => n !== null);
+
+      if (nums.length === 0) {
+        for (const cell of row) {
+          const cleaned = cell.replace(/\*\*\d+\*\*\s*/g, '')
+                              .replace(/\s+\d+$/, '').trim();
+          const isHeader = /^(LINE|QTY|PRODUCT|DESCRIPTION|PRICE|TOTAL|AMOUNT|UNIT|U\/M|DISCOUNT|SHIPPED|ORDERED|BACKORDERED|UPC|LIST|REFERENCE|REP|C\.O\.D|TAKEN BY|ORIGINAL INVOICE|SEE NOTES)/i.test(cleaned);
+          if (!isHeader && cleaned.length > 4 && cleaned.length > lastDesc.length) lastDesc = cleaned;
+        }
+        continue;
+      }
+
+      const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
+
+      if (isFee) {
+        const feeTotal = nums[nums.length - 1];
+        const feeLabel = row.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
+        items.push({ lineNo: '', desc: feeLabel, qty: null, unit: null, total: feeTotal });
+        itemsSum += feeTotal;
+        continue;
+      }
+
+      const lineTotal = nums[nums.length - 1];
+      const netPrice  = nums.length >= 2 ? nums[nums.length - 2] : null;
+      const lineNo    = row[0] || '';
+
+      let desc = '';
+      for (const cell of row) {
+        const cleaned = cell.replace(/\s+\d+$/, '').replace(/\s*[-+]\s*$/, '').trim();
+        const isNumeric = /^\$?[\d,.]+$/.test(cleaned) || cleaned.length === 0 ||
+                          /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN)$/i.test(cleaned);
+        if (!isNumeric && cleaned.length > desc.length) desc = cleaned;
+      }
+
+      if (!desc && lastDesc) desc = lastDesc;
+      if (desc) lastDesc = desc;
+
+      let qty = null;
+      for (let c = row.length - 1; c >= 1; c--) {
+        const m = (row[c] || '').match(/(\d{1,4})$/);
+        if (m) {
+          const n = parseInt(m[1]);
+          if (n > 0 && n < 10000 && n !== Math.round(lineTotal)) { qty = n; break; }
+        }
+      }
+
+      if (lineTotal > 0 && desc.length > 1) {
+        items.push({ lineNo, desc, qty, unit: netPrice, total: lineTotal });
+        itemsSum += lineTotal;
+      }
+    }
+  }
+
+  if (total === null) {
+    const rawTotal =
+      lmap['TOTAL'] || lmap['GRAND TOTAL'] || lmap['INVOICE TOTAL'] ||
+      lmap['AMOUNT DUE'] || lmap['BALANCE DUE'] || lmap['TOTAL DUE'] ||
+      lmap['SUBTOTAL'] || null;
+    if (rawTotal) {
+      const n = parseFloat(rawTotal.replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
+      if (!isNaN(n) && n > 0) total = n;
+    }
+  }
+  if (total === null) {
+    const tm = content.match(/\bTOTAL\b[\s:$]*(\d[\d,]*\.\d{2})/i);
+    if (tm) total = parseFloat(tm[1].replace(/,/g,''));
+  }
+  if (total === null && itemsSum > 0) {
+    total = Math.round(itemsSum * 100) / 100;
+  }
+
+  console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total, itemCount: items.length });
+  return { vendor, invoiceNo, date, jobNo, total, items };
 }
 
-If a field cannot be determined, use null. Never fabricate values.`;
+// ── Gemini helper ──
+async function parseWithGemini(fileBuffer, mimeType) {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
 
-// ── Gemini extraction (with SDK-style retry) ──────────────────────────────
-async function extractWithGemini(buffer, mimeType) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY not set');
+  const base64Data = fileBuffer.toString('base64');
 
-  const model = await getBestGeminiModel();
-  const base64Data = buffer.toString('base64');
+  const prompt = `You are a receipt and invoice parser. Extract ALL content from this document.
+
+Formatting rules (follow exactly):
+- Output the vendor/company name as a # H1 heading (e.g. "# GESCAN")
+- Output every table as an HTML <table> with <tr><th> for header rows and <tr><td> for data cells
+- Preserve every value exactly as printed — do not round numbers, reformat dates, or paraphrase
+- Include ALL rows: header rows, sub-header rows, data rows, totals rows
+- Output plain text (addresses, notes) as-is between tables
+- Do not add commentary, explanations, or markdown code fences`;
 
   const body = {
     contents: [{
       parts: [
         { inline_data: { mime_type: mimeType, data: base64Data } },
-        { text: EXTRACTION_PROMPT }
+        { text: prompt }
       ]
     }],
-    generationConfig: {
-      response_mime_type: 'application/json',
-      temperature: 0.1
-    }
+    generationConfig: { temperature: 0, maxOutputTokens: 8192 }
   };
 
-  // Attempt 1: direct REST
-  let lastError = null;
-  const apiUrl = `${GEMINI_BASE}/models/${model}:generateContent?key=${key}`;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
 
-  try {
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      lastError = new Error('Gemini API error: ' + JSON.stringify(data.error || data));
-    } else {
-      return parseGeminiResponse(data);
-    }
-  } catch (err) {
-    lastError = err;
-    console.warn('[Gemini] REST attempt failed:', err.message);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini API error: ${res.status} ${err.substring(0, 300)}`);
   }
 
-  // Attempt 2: try alternate model if first fails
-  const altModels = ['gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
-  for (const alt of altModels) {
-    if (alt === model) continue;
-    try {
-      console.log('[Gemini] Retrying with model:', alt);
-      const res = await fetch(`${GEMINI_BASE}/models/${alt}:generateContent?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        cachedGeminiModel = alt; // Update cache to working model
-        return parseGeminiResponse(data);
-      }
-    } catch (err) {
-      console.warn(`[Gemini] Alt model ${alt} failed:`, err.message);
-    }
-  }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text) throw new Error('Gemini returned empty response');
 
-  throw lastError || new Error('All Gemini model attempts failed');
+  console.log('[gemini] output preview:', text.substring(0, 300));
+  return text;
 }
 
-function parseGeminiResponse(data) {
-  const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!rawContent) throw new Error('Gemini returned empty response');
-
-  let jsonStr = rawContent;
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-  }
-
-  const extracted = JSON.parse(jsonStr);
-  return extracted;
-}
-
-// ── POST /api/extract ────────────────────────────────────────────────────
 app.post('/api/extract', upload.single('receipt'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-    const { buffer, mimetype, originalname } = req.file;
-
-    // Upload to Vercel Blob (non-blocking — don't fail if blob fails)
-    const ts = Date.now();
-    const ext = originalname.split('.').pop() || 'bin';
-    const blobFilename = `receipts/${ts}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const blobUrl = await uploadToBlob(buffer, blobFilename, mimetype);
-
-    // Extract with Gemini
-    const extracted = await extractWithGemini(buffer, mimetype);
-
-    const rawPO = (extracted.poBox || '').toString().trim();
-    let jobNo = null;
-    let jobStatus = 'missing';
-
-    if (rawPO && rawPO.toLowerCase() !== 'null') {
-      jobNo = rawPO;
-      jobStatus = 'found';
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const imageDataUrl = mimetype !== 'application/pdf'
-      ? `data:${mimetype};base64,${buffer.toString('base64')}`
+    const fileBuffer = req.file.buffer;
+    const mimeType = req.file.mimetype;
+
+    console.log('[extract] mimetype:', mimeType, '| size:', fileBuffer.length, '| file:', req.file.originalname);
+
+    const geminiOutput = await parseWithGemini(fileBuffer, mimeType);
+    console.log('[extract] Gemini output preview:', geminiOutput.substring(0, 500));
+
+    const imageDataUrl = mimeType !== 'application/pdf'
+      ? `data:${mimeType};base64,${fileBuffer.toString('base64')}`
       : null;
+
+    let receiptBlobUrl = null;
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const ext = mimeType === 'application/pdf' ? 'pdf' : (mimeType.split('/')[1] || 'jpg');
+        const safeName = `receipt_${Date.now()}`;
+        const blobResult = await blobPut(`receipts/${safeName}.${ext}`, fileBuffer, {
+          access: 'public',
+          contentType: mimeType,
+          token: process.env.BLOB_READ_WRITE_TOKEN
+        });
+        receiptBlobUrl = blobResult.url;
+        console.log('[extract] uploaded to Vercel Blob:', receiptBlobUrl);
+      } catch (blobErr) {
+        console.error('[extract] Blob upload failed:', blobErr.message);
+      }
+    }
+
+    const fields = extractFieldsFromLlama(geminiOutput);
 
     res.json({
       success: true,
       data: {
-        ...extracted,
-        jobNo,
-        jobStatus,
+        markdown: geminiOutput,
         imageDataUrl,
-        isPdf: mimetype === 'application/pdf',
-        blobUrl: blobUrl || null
+        receiptBlobUrl,
+        isPdf: mimeType === 'application/pdf',
+        vendor:    fields.vendor    || null,
+        invoiceNo: fields.invoiceNo || null,
+        date:      fields.date      || null,
+        total:     fields.total     || null,
+        jobNo:     fields.jobNo     || null,
+        jobStatus: fields.jobNo ? 'found' : 'missing',
+        items:     fields.items     || [],
       }
     });
 
   } catch (err) {
-    console.error('[Extract] Error:', err);
+    console.error('Extraction error:', err);
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+      return res.status(400).json({ error: 'File too large. Maximum size is 4MB.' });
     }
     res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
-// ── Jobber: OAuth callback (for code exchange) ───────────────────────────
-app.get('/api/jobber/callback', async (req, res) => {
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', model: 'gemini-1.5-flash' });
+});
+
+// ── Upstash Redis helpers ──
+async function redisGet(key) {
+  if (!process.env.UPSTASH_REDIS_REST_URL) return null;
+  const r = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}/get/${key}`, {
+    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` }
+  });
+  const data = await r.json();
+  return data.result || null;
+}
+
+async function redisSet(key, value, exSeconds) {
+  if (!process.env.UPSTASH_REDIS_REST_URL) return;
+  let url = `${process.env.UPSTASH_REDIS_REST_URL}/set/${key}/${encodeURIComponent(value)}`;
+  if (exSeconds) url += `/ex/${exSeconds}`;
+  await fetch(url, {
+    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` }
+  });
+}
+
+// ── Jobber token management ──
+async function getJobberToken() {
+  let token = await redisGet('jobber_access_token');
+  if (token) return token;
+
+  const refreshToken = await redisGet('jobber_refresh_token');
+  if (!refreshToken) throw new Error('NOT_CONNECTED');
+
+  const res = await fetch('https://api.getjobber.com/api/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.JOBBER_CLIENT_ID,
+      client_secret: process.env.JOBBER_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token'
+    })
+  });
+  const tokens = await res.json();
+  if (!tokens.access_token) throw new Error('TOKEN_REFRESH_FAILED');
+
+  await redisSet('jobber_access_token', tokens.access_token, 82800);
+  if (tokens.refresh_token) await redisSet('jobber_refresh_token', tokens.refresh_token);
+  return tokens.access_token;
+}
+
+// ── Jobber GraphQL helper ──
+async function jobberGQL(query, variables = {}) {
+  const token = await getJobberToken();
+  const res = await fetch('https://api.getjobber.com/api/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'X-JOBBER-GRAPHQL-VERSION': '2026-03-10'
+    },
+    body: JSON.stringify({ query, variables })
+  });
+  return res.json();
+}
+
+// ── Jobber auth routes ──
+app.get('/api/auth/jobber', (req, res) => {
+  const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
+  if (!appUrl) return res.status(500).send('APP_URL environment variable not set');
+  const url = new URL('https://api.getjobber.com/api/oauth/authorize');
+  url.searchParams.set('client_id', process.env.JOBBER_CLIENT_ID);
+  url.searchParams.set('redirect_uri', `${appUrl}/api/auth/callback`);
+  url.searchParams.set('response_type', 'code');
+  res.redirect(url.toString());
+});
+
+app.get('/api/auth/callback', async (req, res) => {
   const { code } = req.query;
-  if (!code) return res.status(400).send('Missing code');
-
-  const clientId = process.env.JOBBER_CLIENT_ID;
-  const clientSecret = process.env.JOBBER_CLIENT_SECRET;
-  const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
-
+  if (!code) return res.status(400).send('Missing authorization code');
   try {
-    const tokenRes = await fetch(JOBBER_TOKEN_URL, {
+    const tokenRes = await fetch('https://api.getjobber.com/api/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: process.env.JOBBER_CLIENT_ID,
+        client_secret: process.env.JOBBER_CLIENT_SECRET,
         code,
-        redirect_uri: `${appUrl}/api/jobber/callback`
+        grant_type: 'authorization_code',
+        redirect_uri: `${(process.env.APP_URL || '').trim().replace(/\/$/, '')}/api/auth/callback`
       })
     });
-
-    const data = await tokenRes.json();
-    if (!tokenRes.ok) return res.status(400).send('Token exchange failed: ' + JSON.stringify(data));
-
-    jobberTokenCache = {
-      access_token: data.access_token,
-      token_type: data.token_type || 'Bearer',
-      expires_at: Date.now() + (data.expires_in || 3600) * 1000,
-      refresh_token: data.refresh_token || null
-    };
-
-    console.log('[Jobber] OAuth code exchanged for token successfully');
-    res.send('<html><body style="font-family:sans-serif;text-align:center;padding:60px;"><h2 style="color:#059669;">✓ Jobber Connected</h2><p>You can close this window.</p></body></html>');
+    const tokens = await tokenRes.json();
+    if (!tokens.access_token) {
+      return res.status(400).send('Failed to get token: ' + JSON.stringify(tokens));
+    }
+    await redisSet('jobber_access_token', tokens.access_token, 82800);
+    await redisSet('jobber_refresh_token', tokens.refresh_token);
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Connected!</title></head>
+      <body style="font-family:system-ui;text-align:center;padding:60px;background:#F7F8FA;">
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:40px;max-width:400px;margin:0 auto;">
+          <div style="color:#059669;font-size:48px;margin-bottom:16px;">&#10003;</div>
+          <h2 style="margin:0 0 8px;color:#111827;">Connected to Jobber!</h2>
+          <p style="color:#6B7280;margin:0 0 24px;">ReceiptFlow can now create expenses in your Jobber account.</p>
+          <a href="/" style="background:#B8620A;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;">Return to ReceiptFlow</a>
+        </div>
+      </body></html>`);
   } catch (err) {
     res.status(500).send('Error: ' + err.message);
   }
 });
 
-// ── Jobber: status & auth URL ─────────────────────────────────────────────
-app.get('/api/jobber-status', async (req, res) => {
-  const clientId = process.env.JOBBER_CLIENT_ID;
-  const clientSecret = process.env.JOBBER_CLIENT_SECRET;
-  const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
-
-  let connected = false;
-  let authUrl = null;
-
+app.get('/api/auth/status', async (req, res) => {
   try {
-    const token = await getJobberToken();
-    // Quick connectivity test
-    const testRes = await fetch(JOBBER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-JOBBER-GRAPHQL-VERSION': '2024-01-01'
-      },
-      body: JSON.stringify({ query: '{ __typename }' })
-    });
-    connected = testRes.ok;
-  } catch (e) {
-    connected = false;
+    const token = await redisGet('jobber_access_token');
+    const refresh = await redisGet('jobber_refresh_token');
+    res.json({ connected: !!(token || refresh) });
+  } catch {
+    res.json({ connected: false });
   }
-
-  if (!connected && clientId) {
-    const redirectUri = encodeURIComponent(`${appUrl}/api/jobber/callback`);
-    authUrl = `https://api.getjobber.com/api/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}`;
-  }
-
-  res.json({ connected, authUrl, hasClientId: !!clientId, hasClientSecret: !!clientSecret });
 });
 
-// ── Jobber: look up a job by job number ───────────────────────────────────
-app.get('/api/jobber-job', async (req, res) => {
-  const jobNumber = req.query.jobNumber;
-  if (!jobNumber) return res.status(400).json({ error: 'jobNumber query param required' });
-
+// ── Create Jobber expense ──
+app.post('/api/create-expense', async (req, res) => {
   try {
-    const token = await getJobberToken();
+    const { vendor, invoiceNo, date, total, jobNo, receiptBlobUrl } = req.body;
 
-    const query = `
-      query FindJob($filter: JobFilterAttributes) {
-        jobs(filter: $filter) {
-          nodes {
-            id
-            jobNumber
-            title
-            client {
-              id
-              name
-            }
-          }
+    if (!jobNo) {
+      return res.status(400).json({ error: 'No job number found. Please enter one before posting to Jobber.' });
+    }
+
+    const num = parseInt(jobNo);
+    if (isNaN(num)) {
+      return res.status(400).json({ error: `"${jobNo}" is not a valid job number.` });
+    }
+
+    const jobResult = await jobberGQL(`
+      query {
+        jobs(first: 100, searchTerm: "${num}") {
+          nodes { id jobNumber title }
         }
       }
-    `;
+    `);
 
-    const jobberRes = await fetch(JOBBER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-JOBBER-GRAPHQL-VERSION': '2024-01-01'
-      },
-      body: JSON.stringify({
-        query,
-        variables: { filter: { jobNumber: parseInt(jobNumber) || jobNumber } }
-      })
-    });
+    console.log('Jobber job lookup response:', JSON.stringify(jobResult));
 
-    const data = await jobberRes.json();
-    if (!jobberRes.ok) return res.status(jobberRes.status).json(data);
+    if (jobResult.errors?.length) {
+      const gqlMsg = jobResult.errors[0].message || '';
+      if (/unauthori|token|auth/i.test(gqlMsg)) {
+        return res.status(401).json({ error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.' });
+      }
+      return res.status(400).json({ error: 'Jobber API error: ' + gqlMsg });
+    }
 
-    const jobs = data?.data?.jobs?.nodes || [];
-    res.json({ jobs });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const nodes = jobResult.data?.jobs?.nodes || [];
+    const job = nodes.find(j => Number(j.jobNumber) === num);
+    if (!job) {
+      return res.status(404).json({
+        error: `Job #${num} not found in Jobber. Check the job number and try again.`,
+        debug: { searched: num, returned: nodes }
+      });
+    }
 
-// ── Jobber: post expense to a job ─────────────────────────────────────────
-app.post('/api/post-to-jobber', async (req, res) => {
-  const { jobId, vendor, invoiceNo, date, total, tax, subtotal, category, items, blobUrl } = req.body;
+    const receiptNote = receiptBlobUrl ? 'attached' : null;
 
-  if (!jobId) return res.status(400).json({ error: 'jobId is required' });
-  if (!total) return res.status(400).json({ error: 'total is required' });
+    const titleParts = [vendor, invoiceNo ? `Invoice #${invoiceNo}` : null].filter(Boolean);
+    const expenseTitle = titleParts.length ? titleParts.join(' — ') : 'Expense';
 
-  try {
-    const token = await getJobberToken();
+    const parsedTotal = parseFloat(total);
+    const expenseTotal = isNaN(parsedTotal) ? 0 : parsedTotal;
 
-    const itemsSummary = (items || []).slice(0, 5).map(i => i.desc).filter(Boolean).join('; ');
-    const description = itemsSummary || `${vendor || 'Vendor'} — Invoice ${invoiceNo || 'N/A'}`;
+    const expInput = {
+      linkedJobId: job.id,
+      title: expenseTitle,
+      total: expenseTotal,
+      date: (date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
+    };
+    if (invoiceNo) expInput.description = `Invoice #${invoiceNo}`;
+    if (receiptBlobUrl) expInput.receiptUrl = receiptBlobUrl;
 
-    const mutation = `
+    const expResult = await jobberGQL(`
       mutation CreateExpense($input: ExpenseCreateInput!) {
         expenseCreate(input: $input) {
-          expense {
-            id
-            description
-            total
-            date
-          }
-          userErrors {
-            message
-            path
-          }
+          expense { id title total }
+          userErrors { message path }
         }
       }
-    `;
+    `, { input: expInput });
 
-    const inputPayload = {
-      jobId,
-      description,
-      total: parseFloat(total),
-      tax: parseFloat(tax) || 0,
-      date: date || new Date().toISOString().split('T')[0],
-      financialCategory: (category || 'MATERIALS').toUpperCase()
-    };
+    console.log('Jobber expense create response:', JSON.stringify(expResult));
 
-    // Attach blob URL as a note/attachment if available
-    if (blobUrl) {
-      inputPayload.description = description + `\n[Receipt: ${blobUrl}]`;
+    const errors = expResult.data?.expenseCreate?.userErrors;
+    if (errors?.length) return res.status(400).json({ error: errors[0].message, raw: expResult });
+
+    const expense = expResult.data?.expenseCreate?.expense;
+
+    if (!expense?.id) {
+      return res.status(500).json({
+        error: 'Jobber accepted the request but returned no expense. The "Expenses" write scope may not be enabled on your Jobber app.',
+        raw: expResult
+      });
     }
 
-    const jobberRes = await fetch(JOBBER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-JOBBER-GRAPHQL-VERSION': '2024-01-01'
-      },
-      body: JSON.stringify({ query: mutation, variables: { input: inputPayload } })
-    });
-
-    const data = await jobberRes.json();
-    if (!jobberRes.ok) return res.status(jobberRes.status).json(data);
-
-    const userErrors = data?.data?.expenseCreate?.userErrors || [];
-    if (userErrors.length > 0) {
-      return res.status(400).json({ error: userErrors.map(e => e.message).join(', ') });
-    }
-
-    const expense = data?.data?.expenseCreate?.expense;
-    res.json({ success: true, expense });
-
+    res.json({ success: true, expenseId: expense.id, jobTitle: job.title, receiptNote });
   } catch (err) {
-    console.error('[Jobber Post] Error:', err);
+    if (err.message === 'NOT_CONNECTED') {
+      return res.status(401).json({ error: 'Not connected to Jobber. Go to Settings to connect.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Health check ──────────────────────────────────────────────────────────
-app.get('/api/health', async (req, res) => {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const jobberKey = process.env.JOBBER_API_KEY;
-  const clientId = process.env.JOBBER_CLIENT_ID;
-  const clientSecret = process.env.JOBBER_CLIENT_SECRET;
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+// Export for Vercel serverless; also listen when run directly
+module.exports = app;
 
-  let geminiModel = cachedGeminiModel || 'gemini-1.5-pro';
-  // Kick off model detection in background (non-blocking)
-  if (!cachedGeminiModel && geminiKey) {
-    getBestGeminiModel().then(m => { geminiModel = m; }).catch(() => {});
-  }
-
-  res.json({
-    status: 'ok',
-    model: geminiModel,
-    geminiConfigured: !!geminiKey,
-    jobberConfigured: !!(jobberKey || (clientId && clientSecret)),
-    jobberOAuthConfigured: !!(clientId && clientSecret),
-    blobConfigured: !!blobToken,
-    authConfigured: !!process.env.AUTH_USER,
-    geminiKeyPreview: geminiKey ? geminiKey.substring(0, 8) + '...' : 'NOT SET',
-    jobberKeyPreview: jobberKey ? jobberKey.substring(0, 8) + '...' : (clientId ? 'OAuth' : 'NOT SET')
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`ReceiptFlow server running at http://localhost:${PORT}`);
   });
-});
-
-// ── List available Gemini models ──────────────────────────────────────────
-app.get('/api/models', async (req, res) => {
-  try {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) return res.status(500).json({ error: 'GEMINI_API_KEY not set' });
-
-    const r = await fetch(`${GEMINI_BASE}/models?key=${key}`);
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json(data);
-
-    const models = (data.models || []).map(m => ({
-      name: m.name,
-      displayName: m.displayName,
-      methods: m.supportedGenerationMethods,
-      supportsVision: (m.supportedGenerationMethods || []).includes('generateContent')
-    })).filter(m => m.supportsVision);
-
-    const best = await getBestGeminiModel();
-    res.json({ models, selected: best });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`ReceiptFlow server running at http://localhost:${PORT}`);
-  // Pre-load best Gemini model on startup
-  if (process.env.GEMINI_API_KEY) {
-    getBestGeminiModel().then(m => console.log('[Startup] Gemini model:', m)).catch(e => console.warn('[Startup] Model detection:', e.message));
-  }
-});
+}
