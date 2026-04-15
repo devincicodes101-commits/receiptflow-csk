@@ -236,7 +236,7 @@ function extractFieldsFromLlama(content) {
   const plainText = content.replace(/<table[\s\S]*?<\/table>/gi, '');
   for (const [, lbl, val] of plainText.matchAll(/^([A-Z][A-Za-z\s./()#-]{2,}?)\s*:\s*(.+)$/gm)) {
     const k = lbl.toUpperCase().replace(/\s+/g, ' ').trim();
-    if (k && val.trim()) lmap[k] = val.trim();
+    if (k && val.trim()) setLmap(k, val.trim());
   }
 
   console.log('[fields] label map:', JSON.stringify(lmap));
@@ -312,9 +312,8 @@ function extractFieldsFromLlama(content) {
     }
   }
 
-  let itemsTable = null;
-  let totalCol = -1;
-  let itemsHeaderRow = 0;
+  // Collect ALL items tables (multi-page PDFs may produce separate tables per page)
+  const itemsTables = [];
 
   for (const table of tables) {
     for (let r = 0; r < table.length; r++) {
@@ -324,27 +323,24 @@ function extractFieldsFromLlama(content) {
       const hasPrice = upper.some(c => c.includes('PRICE') || c === 'RATE' || c === 'AMOUNT');
 
       if (tc >= 0 && (hasDesc || hasPrice)) {
-        itemsTable = table;
-        totalCol = tc;
-        itemsHeaderRow = r;
+        itemsTables.push({ table, headerRow: r });
         break;
       }
     }
-    if (itemsTable) break;
   }
 
   let itemsSum = 0;
   let lastDesc = '';
 
-  if (itemsTable && totalCol >= 0) {
+  const parseNum = (cell) => {
+    const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
+    const n = parseFloat(s);
+    return (!isNaN(n) && n > 0) ? n : null;
+  };
+
+  for (const { table: itemsTable, headerRow: itemsHeaderRow } of itemsTables) {
     for (let ri = itemsHeaderRow + 1; ri < itemsTable.length; ri++) {
       const row = itemsTable[ri];
-
-      const parseNum = (cell) => {
-        const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
-        const n = parseFloat(s);
-        return (!isNaN(n) && n > 0) ? n : null;
-      };
 
       const nums = row.map(parseNum).filter(n => n !== null);
 
