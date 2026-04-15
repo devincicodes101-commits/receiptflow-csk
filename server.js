@@ -7,6 +7,7 @@ const { put: blobPut } = require('@vercel/blob');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 app.use(cors({
   origin: true,
@@ -413,12 +414,23 @@ function extractFieldsFromLlama(content) {
   return { vendor, invoiceNo, date, jobNo, total, items };
 }
 
-// ── Gemini helper ──
-async function parseWithGemini(fileBuffer, mimeType) {
+// ── Gemini SDK loader ──
+let geminiClient = null;
+
+async function getGeminiClient() {
+  if (geminiClient) return geminiClient;
+
   const GEMINI_KEY = (process.env.GEMINI_API_KEY || '').trim();
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
 
-  const base64Data = fileBuffer.toString('base64');
+  const { GoogleGenAI } = await import('@google/genai');
+  geminiClient = new GoogleGenAI({ apiKey: GEMINI_KEY });
+  return geminiClient;
+}
+
+// ── Gemini helper using official SDK ──
+async function parseWithGemini(fileBuffer, mimeType) {
+  const ai = await getGeminiClient();
 
   const prompt = `You are a receipt and invoice parser. Extract ALL content from this document.
 
@@ -430,35 +442,20 @@ Formatting rules (follow exactly):
 - Output plain text (addresses, notes) as-is between tables
 - Do not add commentary, explanations, or markdown code fences`;
 
-  const body = {
-    contents: [{
-      parts: [
-        { inline_data: { mime_type: mimeType, data: base64Data } },
-        { text: prompt }
-      ]
-    }],
-    generationConfig: {
-      temperature: 0,
-      maxOutputTokens: 8192
-    }
-  };
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType,
+          data: fileBuffer.toString('base64')
+        }
+      }
+    ]
+  });
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini API error: ${res.status} ${err.substring(0, 300)}`);
-  }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const text = response.text || '';
   if (!text) throw new Error('Gemini returned empty response');
 
   console.log('[gemini] output preview:', text.substring(0, 300));
@@ -533,7 +530,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
 app.get('/api/health', (req, res) => {
   return res.json({
     status: 'ok',
-    model: 'gemini-2.5-flash',
+    model: GEMINI_MODEL,
     jobberConfigured: !!(
       (process.env.JOBBER_CLIENT_ID || '').trim() &&
       (process.env.JOBBER_CLIENT_SECRET || '').trim()
