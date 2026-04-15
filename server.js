@@ -8,58 +8,130 @@ const { put: blobPut } = require('@vercel/blob');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
-app.use(cookieParser((process.env.SESSION_SECRET || 'fallback-secret-change-me').trim()));
+// ── Middleware ──
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
-// ── Auth middleware — protects all /api routes except login + check ──
+app.use(express.json());
+
+app.use(
+  cookieParser(
+    (process.env.SESSION_SECRET || 'fallback-secret-change-me').trim()
+  )
+);
+
+// ── Auth Middleware ──
 app.use((req, res, next) => {
-  const open = ['/api/login', '/api/auth/check', '/api/auth/callback', '/api/auth/jobber'];
-  if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
+  const openRoutes = [
+    '/api/login',
+    '/api/logout',
+    '/api/auth/check',
+    '/api/auth/callback',
+    '/api/auth/jobber',
+    '/api/health'
+  ];
+
+  if (!req.path.startsWith('/api/')) return next();
+  if (openRoutes.includes(req.path)) return next();
+
   const session = req.signedCookies?.rf_session;
+
   if (session) return next();
-  return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+
+  return res.status(401).json({
+    error: 'Not authenticated',
+    code: 'NOT_AUTHENTICATED'
+  });
 });
 
-// ── Login ──
+// ── LOGIN ──
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
+
   if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required.' });
+    return res.status(400).json({
+      error: 'Username and password required.'
+    });
   }
 
   const users = [
-    { u: (process.env.AUTH_USER   || '').trim(), p: (process.env.AUTH_PASS   || '').trim() },
-    { u: (process.env.AUTH_USER_2 || '').trim(), p: (process.env.AUTH_PASS_2 || '').trim() },
-    { u: (process.env.AUTH_USER_3 || '').trim(), p: (process.env.AUTH_PASS_3 || '').trim() },
-  ].filter(x => x.u && x.p);
+    {
+      u: (process.env.AUTH_USER || '').trim(),
+      p: (process.env.AUTH_PASS || '').trim()
+    },
+    {
+      u: (process.env.AUTH_USER_2 || '').trim(),
+      p: (process.env.AUTH_PASS_2 || '').trim()
+    },
+    {
+      u: (process.env.AUTH_USER_3 || '').trim(),
+      p: (process.env.AUTH_PASS_3 || '').trim()
+    }
+  ].filter(u => u.u && u.p);
 
-  const match = users.find(x => x.u === username && x.p === password);
-  if (!match) return res.status(401).json({ error: 'Invalid username or password.' });
+  const cleanUser = username.trim();
 
-  res.cookie('rf_session', username, {
+  const match = users.find(
+    u => u.u === cleanUser && u.p === password
+  );
+
+  if (!match) {
+    return res.status(401).json({
+      error: 'Invalid username or password.'
+    });
+  }
+
+  res.cookie('rf_session', cleanUser, {
     signed: true,
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: true
   });
-  res.json({ success: true, username });
+
+  return res.json({
+    success: true,
+    username: cleanUser
+  });
 });
 
-// ── Logout ──
+// ── LOGOUT ──
 app.post('/api/logout', (req, res) => {
   res.clearCookie('rf_session');
-  res.json({ success: true });
+  return res.json({ success: true });
 });
 
-// ── Auth check ──
+// ── AUTH CHECK ──
 app.get('/api/auth/check', (req, res) => {
   const session = req.signedCookies?.rf_session;
-  if (session) return res.json({ authenticated: true, username: session });
-  return res.status(401).json({ authenticated: false });
+
+  if (session) {
+    return res.json({
+      authenticated: true,
+      username: session
+    });
+  }
+
+  return res.status(401).json({
+    authenticated: false
+  });
 });
 
+// ── HEALTH CHECK ──
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    model: 'gemini-1.5-flash',
+    jobberConfigured: !!(
+      process.env.JOBBER_CLIENT_ID &&
+      process.env.JOBBER_CLIENT_SECRET
+    )
+  });
+});
+
+// ── File upload ──
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
@@ -425,11 +497,6 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     }
     res.status(500).json({ error: err.message || 'Internal server error' });
   }
-});
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', model: 'gemini-1.5-flash' });
 });
 
 // ── Upstash Redis helpers ──
