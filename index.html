@@ -993,8 +993,8 @@ async function handleFile(file) {
         toast('Please upload a JPG, PNG, WEBP, or PDF file', 'error');
         return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-        toast('File too large. Max 10MB.', 'error');
+    if (file.size > 4 * 1024 * 1024) {
+        toast('File too large. Max 4MB.', 'error');
         return;
     }
     state.uploading = true;
@@ -1005,13 +1005,19 @@ async function handleFile(file) {
 
     try {
         const res = await authedFetch(API_BASE + '/api/extract', { method: 'POST', body: formData });
-        const json = await res.json();
 
         if (res.status === 401) {
             doLogout();
             return;
         }
 
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const text = await res.text();
+            throw new Error(text || `Server error (${res.status})`);
+        }
+
+        const json = await res.json();
         if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
 
         state.uploading = false;
