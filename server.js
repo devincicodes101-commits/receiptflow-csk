@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(cookieParser(process.env.SESSION_SECRET || 'fallback-secret-change-me'));
+app.use(cookieParser((process.env.SESSION_SECRET || 'fallback-secret-change-me').trim()));
 
 // ── Auth middleware — protects all /api routes except login + check ──
 app.use((req, res, next) => {
@@ -29,9 +29,9 @@ app.post('/api/login', (req, res) => {
   }
 
   const users = [
-    { u: process.env.AUTH_USER,   p: process.env.AUTH_PASS   },
-    { u: process.env.AUTH_USER_2, p: process.env.AUTH_PASS_2 },
-    { u: process.env.AUTH_USER_3, p: process.env.AUTH_PASS_3 },
+    { u: (process.env.AUTH_USER   || '').trim(), p: (process.env.AUTH_PASS   || '').trim() },
+    { u: (process.env.AUTH_USER_2 || '').trim(), p: (process.env.AUTH_PASS_2 || '').trim() },
+    { u: (process.env.AUTH_USER_3 || '').trim(), p: (process.env.AUTH_PASS_3 || '').trim() },
   ].filter(x => x.u && x.p);
 
   const match = users.find(x => x.u === username && x.p === password);
@@ -258,7 +258,6 @@ function extractFieldsFromLlama(content) {
       }
 
       const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
-
       if (isFee) {
         const feeTotal = nums[nums.length - 1];
         const feeLabel = row.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
@@ -322,7 +321,7 @@ function extractFieldsFromLlama(content) {
 
 // ── Gemini helper ──
 async function parseWithGemini(fileBuffer, mimeType) {
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  const GEMINI_KEY = (process.env.GEMINI_API_KEY || '').trim();
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
 
   const base64Data = fileBuffer.toString('base64');
@@ -464,8 +463,8 @@ async function getJobberToken() {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: process.env.JOBBER_CLIENT_ID,
-      client_secret: process.env.JOBBER_CLIENT_SECRET,
+      client_id: (process.env.JOBBER_CLIENT_ID || '').trim(),
+      client_secret: (process.env.JOBBER_CLIENT_SECRET || '').trim(),
       refresh_token: refreshToken,
       grant_type: 'refresh_token'
     })
@@ -498,7 +497,7 @@ app.get('/api/auth/jobber', (req, res) => {
   const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
   if (!appUrl) return res.status(500).send('APP_URL environment variable not set');
   const url = new URL('https://api.getjobber.com/api/oauth/authorize');
-  url.searchParams.set('client_id', process.env.JOBBER_CLIENT_ID);
+  url.searchParams.set('client_id', (process.env.JOBBER_CLIENT_ID || '').trim());
   url.searchParams.set('redirect_uri', `${appUrl}/api/auth/callback`);
   url.searchParams.set('response_type', 'code');
   res.redirect(url.toString());
@@ -508,15 +507,16 @@ app.get('/api/auth/callback', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).send('Missing authorization code');
   try {
+    const appUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
     const tokenRes = await fetch('https://api.getjobber.com/api/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.JOBBER_CLIENT_ID,
-        client_secret: process.env.JOBBER_CLIENT_SECRET,
+        client_id: (process.env.JOBBER_CLIENT_ID || '').trim(),
+        client_secret: (process.env.JOBBER_CLIENT_SECRET || '').trim(),
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${(process.env.APP_URL || '').trim().replace(/\/$/, '')}/api/auth/callback`
+        redirect_uri: `${appUrl}/api/auth/callback`
       })
     });
     const tokens = await tokenRes.json();
@@ -591,7 +591,6 @@ app.post('/api/create-expense', async (req, res) => {
     }
 
     const receiptNote = receiptBlobUrl ? 'attached' : null;
-
     const titleParts = [vendor, invoiceNo ? `Invoice #${invoiceNo}` : null].filter(Boolean);
     const expenseTitle = titleParts.length ? titleParts.join(' — ') : 'Expense';
 
@@ -622,7 +621,6 @@ app.post('/api/create-expense', async (req, res) => {
     if (errors?.length) return res.status(400).json({ error: errors[0].message, raw: expResult });
 
     const expense = expResult.data?.expenseCreate?.expense;
-
     if (!expense?.id) {
       return res.status(500).json({
         error: 'Jobber accepted the request but returned no expense. The "Expenses" write scope may not be enabled on your Jobber app.',
