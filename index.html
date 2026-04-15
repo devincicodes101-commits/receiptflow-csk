@@ -123,6 +123,7 @@
 </head>
 <body>
 
+<!-- Login Screen -->
 <div id="login-screen" class="login-wrap" style="display:none;">
     <div class="login-card">
         <div style="text-align:center;margin-bottom:28px;">
@@ -149,9 +150,11 @@
     </div>
 </div>
 
+<!-- Main App -->
 <div id="app" class="flex h-screen overflow-hidden" style="display:none !important;">
 
-        <aside class="sidebar">
+    <!-- Sidebar -->
+    <aside class="sidebar">
         <div style="padding:18px 14px 14px;border-bottom:1px solid #262629;">
             <div style="display:flex;align-items:center;gap:9px;">
                 <div style="width:32px;height:32px;background:var(--brand);border-radius:7px;display:flex;align-items:center;justify-content:center;">
@@ -187,7 +190,8 @@
         </div>
     </aside>
 
-        <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Main -->
+    <div class="flex-1 flex flex-col overflow-hidden">
         <header style="height:48px;border-bottom:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;">
             <div id="breadcrumb" style="font-size:13px;color:#6B7280;">
                 <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
@@ -468,7 +472,7 @@ function uploadHTML() {
                     </tr>`).join('')}
                     </tbody>
                 </table>
-                </div>
+            </div>
         </div>` : ''}
     </div>`;
 }
@@ -964,71 +968,57 @@ async function postToJobber() {
     const vendor = document.getElementById('f-vendor')?.value || r.vendor;
     const invoice = document.getElementById('f-invoice')?.value || r.invoiceNo;
     const date = document.getElementById('f-date')?.value || r.date;
-    const category = document.getElementById('f-category')?.value || state.settings.category;
 
     state.postingToJobber = true;
     render();
 
     try {
-        const payload = {
-            vendor,
-            invoiceNo: invoice,
-            date,
-            total: r.total,
-            jobNo,
-            category,
-            receiptBlobUrl: r.receiptBlobUrl || null
-        };
-
-        const res = await authedFetch(API_BASE + '/api/create-expense', {
+        const expRes = await authedFetch(API_BASE + '/api/create-expense', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                vendor,
+                invoiceNo: invoice,
+                date,
+                total: r.total,
+                jobNo,
+                receiptBlobUrl: r.receiptBlobUrl || null
+            })
         });
 
-        const data = await res.json();
+        const expData = await expRes.json();
+        if (!expRes.ok || !expData.success) throw new Error(expData.error || 'Failed to create expense in Jobber');
 
-        if (!res.ok) {
-            throw new Error(data.error || 'Failed to post to Jobber');
-        }
+        state.postingToJobber = false;
+        state.receipt.jobberExpenseId = expData.expenseId || 'created';
+        state.receipt.jobNo = jobNo;
+        state.receipt.jobStatus = 'found';
 
-        state.receipt = {
-            ...r,
-            vendor,
-            invoiceNo: invoice,
-            date,
-            jobNo,
-            category,
-            status: 'jobber',
-            jobberExpenseId: data.expenseId || null
-        };
+        const now = new Date();
+        const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+            now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
         state.history.unshift({
             id: genId(),
             vendor,
-            invoiceNo: invoice,
             date,
-            amount: r.total || 0,
+            amount: r.total,
             jobNo,
             status: 'jobber',
-            savedAt: new Date().toLocaleString(),
-            jobberExpenseId: data.expenseId || null
+            invoiceNo: invoice,
+            savedAt,
+            jobberExpenseId: expData.expenseId
         });
 
         updateBadge();
-        toast('Posted to Jobber successfully!', 'success');
-
-        // Auto go back to upload receipt page
-        setTimeout(() => {
-            navigate('upload');
-        }, 1000);
+        toast(`Posted to Jobber — Job #${jobNo}${expData.jobTitle ? ' / ' + expData.jobTitle : ''}`, 'success', 5000);
+        render();
 
     } catch (err) {
-        console.error(err);
-        toast('Error: ' + (err.message || 'Could not post to Jobber'), 'error', 5000);
-    } finally {
         state.postingToJobber = false;
         render();
+        toast('Jobber error: ' + (err.message || 'Unknown error'), 'error', 6000);
+        console.error(err);
     }
 }
 
@@ -1130,3 +1120,4 @@ function escHtml(str) {
 </script>
 </body>
 </html>
+
