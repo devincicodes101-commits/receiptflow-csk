@@ -742,33 +742,52 @@ app.post('/api/create-expense', async (req, res) => {
       return res.status(400).json({ error: `"${jobNo}" is not a valid job number.` });
     }
 
-    const jobResult = await jobberGQL(`
-      query {
-        jobs(first: 100, searchTerm: "${num}") {
-          nodes { id jobNumber title }
+    const numStr = String(num);
+
+    // Search Jobber for the job — uses GraphQL variables (not string interpolation)
+    async function searchJobs(term) {
+      return jobberGQL(`
+        query FindJob($term: String!) {
+          jobs(first: 100, searchTerm: $term) {
+            nodes { id jobNumber title }
+          }
         }
-      }
-    `);
-
-    console.log('Jobber job lookup response:', JSON.stringify(jobResult));
-
-    if (jobResult.errors?.length) {
-      const gqlMsg = jobResult.errors[0].message || '';
-      if (/unauthori|token|auth/i.test(gqlMsg)) {
-        return res.status(401).json({
-          error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.'
-        });
-      }
-      return res.status(400).json({ error: 'Jobber API error: ' + gqlMsg });
+      `, { term });
     }
 
-    const nodes = jobResult.data?.jobs?.nodes || [];
-    const job = nodes.find(j => Number(j.jobNumber) === num);
+    // Try multiple search terms — Jobber's searchTerm is fuzzy and may miss exact job numbers
+    let job = null;
+    let lastError = null;
+
+    for (const term of [numStr, `#${numStr}`, `Job ${numStr}`]) {
+      const jobResult = await searchJobs(term);
+
+      console.log(`Jobber job lookup (term="${term}"):`, JSON.stringify(jobResult));
+
+      if (jobResult.errors?.length) {
+        const gqlMsg = jobResult.errors[0].message || '';
+        if (/unauthori|token|auth/i.test(gqlMsg)) {
+          return res.status(401).json({
+            error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.'
+          });
+        }
+        lastError = gqlMsg;
+        continue;
+      }
+
+      const nodes = jobResult.data?.jobs?.nodes || [];
+      // Match by string comparison (more reliable than numeric)
+      job = nodes.find(j => String(j.jobNumber) === numStr);
+      if (job) break;
+    }
+
+    if (lastError && !job) {
+      return res.status(400).json({ error: 'Jobber API error: ' + lastError });
+    }
 
     if (!job) {
       return res.status(404).json({
-        error: `Job #${num} not found in Jobber. Check the job number and try again.`,
-        debug: { searched: num, returned: nodes }
+        error: `Job #${num} not found in Jobber. Check the job number and try again.`
       });
     }
 
