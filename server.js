@@ -526,7 +526,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
   }
 });
 
-// Health check
+// ── Health check ──
 app.get('/api/health', (req, res) => {
   return res.json({
     status: 'ok',
@@ -534,7 +534,8 @@ app.get('/api/health', (req, res) => {
     jobberConfigured: !!(
       (process.env.JOBBER_CLIENT_ID || '').trim() &&
       (process.env.JOBBER_CLIENT_SECRET || '').trim()
-    )
+    ),
+    blobConfigured: !!(process.env.BLOB_READ_WRITE_TOKEN || '').trim()
   });
 });
 
