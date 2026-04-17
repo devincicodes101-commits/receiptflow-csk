@@ -472,25 +472,19 @@ Formatting rules (follow exactly):
 
     console.log('[gemini] uploaded PDF for multi-page processing, uri:', uploadedFile.uri);
 
-    try {
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [
-          { text: prompt },
-          { fileData: { mimeType, fileUri: uploadedFile.uri } }
-        ]
-      });
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
+        { text: prompt },
+        { fileData: { mimeType, fileUri: uploadedFile.uri } }
+      ]
+    });
 
-      const text = response.text || '';
-      if (!text) throw new Error('Gemini returned empty response');
+    const text = response.text || '';
+    if (!text) throw new Error('Gemini returned empty response');
 
-      console.log('[gemini] output preview:', text.substring(0, 300));
-      return text;
-    } finally {
-      ai.files.delete(uploadedFile.name).catch(e =>
-        console.warn('[gemini] file cleanup failed:', e.message)
-      );
-    }
+    console.log('[gemini] output preview:', text.substring(0, 300));
+    return text;
   }
 
   // For images, use inlineData directly
