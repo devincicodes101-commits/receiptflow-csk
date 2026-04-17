@@ -462,6 +462,38 @@ Formatting rules (follow exactly):
 - Output plain text (addresses, notes) as-is between tables
 - Do not add commentary, explanations, or markdown code fences`;
 
+  if (mimeType === 'application/pdf') {
+    // Upload via Files API so Gemini processes every page of the PDF
+    const blob = new Blob([fileBuffer], { type: mimeType });
+    const uploadedFile = await ai.files.upload({
+      file: blob,
+      config: { mimeType, displayName: 'receipt.pdf' }
+    });
+
+    console.log('[gemini] uploaded PDF for multi-page processing, uri:', uploadedFile.uri);
+
+    try {
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          { text: prompt },
+          { fileData: { mimeType, fileUri: uploadedFile.uri } }
+        ]
+      });
+
+      const text = response.text || '';
+      if (!text) throw new Error('Gemini returned empty response');
+
+      console.log('[gemini] output preview:', text.substring(0, 300));
+      return text;
+    } finally {
+      ai.files.delete(uploadedFile.name).catch(e =>
+        console.warn('[gemini] file cleanup failed:', e.message)
+      );
+    }
+  }
+
+  // For images, use inlineData directly
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
     contents: [
