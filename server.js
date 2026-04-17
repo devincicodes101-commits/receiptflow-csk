@@ -647,6 +647,13 @@ async function redisGet(key) {
   return data.result || null;
 }
 
+async function redisDel(key) {
+  if (!process.env.UPSTASH_REDIS_REST_URL) return;
+  await fetch(`${process.env.UPSTASH_REDIS_REST_URL}/del/${key}`, {
+    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` }
+  });
+}
+
 async function redisSet(key, value, exSeconds) {
   if (!process.env.UPSTASH_REDIS_REST_URL) return;
 
@@ -680,14 +687,15 @@ async function getJobberToken() {
   const tokens = await res.json();
   if (!tokens.access_token) throw new Error('TOKEN_REFRESH_FAILED');
 
-  await redisSet('jobber_access_token', tokens.access_token, 82800);
+  const ttl = Math.max((tokens.expires_in || 3600) - 300, 300); // 5-min buffer
+  await redisSet('jobber_access_token', tokens.access_token, ttl);
   if (tokens.refresh_token) await redisSet('jobber_refresh_token', tokens.refresh_token);
 
   return tokens.access_token;
 }
 
 // ── Jobber GraphQL helper ──
-async function jobberGQL(query, variables = {}) {
+async function jobberGQL(query, variables = {}, _retry = false) {
   const token = await getJobberToken();
 
   const res = await fetch('https://api.getjobber.com/api/graphql', {
@@ -701,6 +709,14 @@ async function jobberGQL(query, variables = {}) {
   });
 
   const json = await res.json();
+
+  // Token expired in Jobber but Redis still had it — clear and retry once
+  if (!_retry && json.message === 'Access token expired') {
+    console.log('[jobber] access token expired, clearing cache and retrying...');
+    await redisDel('jobber_access_token');
+    return jobberGQL(query, variables, true);
+  }
+
   if (json.errors?.length) console.log('[jobberGQL] errors:', JSON.stringify(json.errors));
   return json;
 }
@@ -743,7 +759,8 @@ app.get('/api/auth/callback', async (req, res) => {
       return res.status(400).send('Failed to get token: ' + JSON.stringify(tokens));
     }
 
-    await redisSet('jobber_access_token', tokens.access_token, 82800);
+    const cbTtl = Math.max((tokens.expires_in || 3600) - 300, 300);
+    await redisSet('jobber_access_token', tokens.access_token, cbTtl);
     await redisSet('jobber_refresh_token', tokens.refresh_token);
 
     return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Connected!</title></head>
