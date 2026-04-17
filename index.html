@@ -199,12 +199,8 @@
                 <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
-                <span id="jobber-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
-                    <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Jobber...
-                </span>
-                <span id="api-status" style="font-size:11px;color:#6B7280;background:#F3F4F6;padding:3px 9px;border-radius:4px;">
-                    <i class="fa-solid fa-circle" style="color:#9CA3AF;font-size:8px;margin-right:4px;"></i>Checking...
-                </span>
+                <span id="jobber-status" style="display:none;"></span>
+                <span id="api-status" style="display:none;"></span>
             </div>
         </header>
         <main id="content" style="flex:1;overflow-y:auto;padding:24px;"></main>
@@ -268,6 +264,22 @@ function recToDb(rec) {
 
 async function loadReceiptsFromSupabase() {
     if (!sb || !currentUser) return;
+
+    // One-time migration: push any localStorage receipts into Supabase
+    const migKey = 'rf_migrated_' + currentUser.id;
+    if (!localStorage.getItem(migKey)) {
+        try {
+            const old = localStorage.getItem('receiptflow_history');
+            if (old) {
+                const recs = JSON.parse(old);
+                if (recs.length) {
+                    await sb.from('receipts').upsert(recs.map(recToDb), { ignoreDuplicates: true });
+                }
+            }
+        } catch {}
+        localStorage.setItem(migKey, '1');
+    }
+
     const { data, error } = await sb.from('receipts')
         .select('*')
         .order('created_at', { ascending: false });
