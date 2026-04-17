@@ -695,12 +695,14 @@ async function jobberGQL(query, variables = {}) {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-JOBBER-GRAPHQL-VERSION': '2026-03-10'
+      'X-JOBBER-GRAPHQL-VERSION': '2024-10-17'
     },
     body: JSON.stringify({ query, variables })
   });
 
-  return res.json();
+  const json = await res.json();
+  if (json.errors?.length) console.log('[jobberGQL] errors:', JSON.stringify(json.errors));
+  return json;
 }
 
 // ── Jobber auth routes ──
@@ -894,7 +896,8 @@ app.post('/api/create-expense', async (req, res) => {
         const nodes = extractNodes(jobsObj);
         const pageInfo = jobsObj?.pageInfo || {};
 
-        console.log(`[jobber] page ${page + 1}: ${nodes.length} jobs, hasNext=${pageInfo.hasNextPage}, responseKeys=${Object.keys(jobsObj || {})}`);
+        if (page === 0) console.log(`[jobber] page 1 raw:`, JSON.stringify(result).substring(0, 800));
+        console.log(`[jobber] page ${page + 1}: ${nodes.length} jobs, hasNext=${pageInfo.hasNextPage}, keys=${Object.keys(jobsObj || {})}`);
 
         job = nodes.find(j => String(j.jobNumber) === numStr);
         if (job || !pageInfo.hasNextPage) break;
