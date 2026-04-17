@@ -16,74 +16,52 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser((process.env.SESSION_SECRET || 'fallback-secret-change-me').trim()));
 
-// ── Auth middleware — protects all /api routes except open routes ──
-app.use((req, res, next) => {
+// ── Supabase admin client (lazy) ──
+let supabaseAdmin = null;
+async function getSupabaseAdmin() {
+  if (supabaseAdmin) return supabaseAdmin;
+  const { createClient } = await import('@supabase/supabase-js');
+  supabaseAdmin = createClient(
+    (process.env.SUPABASE_URL || '').trim(),
+    (process.env.SUPABASE_SERVICE_KEY || '').trim(),
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+  return supabaseAdmin;
+}
+
+// ── Public config endpoint (anon key safe to expose) ──
+app.get('/api/config', (req, res) => {
+  res.json({
+    supabaseUrl: (process.env.SUPABASE_URL || '').trim(),
+    supabaseAnonKey: (process.env.SUPABASE_ANON_KEY || '').trim()
+  });
+});
+
+// ── Auth middleware — verifies Supabase JWT ──
+app.use(async (req, res, next) => {
   const open = [
-    '/api/login',
-    '/api/logout',
-    '/api/auth/check',
-    '/api/auth/callback',
-    '/api/auth/jobber',
-    '/api/auth/status',
-    '/api/jobber-status',
+    '/api/config',
     '/api/health',
+    '/api/auth/jobber',
+    '/api/auth/callback',
+    '/api/jobber-status',
     '/api/jobber-debug'
   ];
 
   if (!req.path.startsWith('/api/') || open.includes(req.path)) return next();
 
-  const session = req.signedCookies?.rf_session;
-  if (session) return next();
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
 
-  return res.status(401).json({
-    error: 'Not authenticated',
-    code: 'NOT_AUTHENTICATED'
-  });
-});
-
-// ── Login ──
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body || {};
-
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required.' });
+  try {
+    const sb = await getSupabaseAdmin();
+    const { data: { user }, error } = await sb.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+    req.user = user;
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
   }
-
-  const users = [
-    { u: (process.env.AUTH_USER || '').trim(), p: (process.env.AUTH_PASS || '').trim() },
-    { u: (process.env.AUTH_USER_2 || '').trim(), p: (process.env.AUTH_PASS_2 || '').trim() },
-    { u: (process.env.AUTH_USER_3 || '').trim(), p: (process.env.AUTH_PASS_3 || '').trim() },
-  ].filter(x => x.u && x.p);
-
-  const cleanUsername = username.trim();
-  const match = users.find(x => x.u === cleanUsername && x.p === password);
-
-  if (!match) {
-    return res.status(401).json({ error: 'Invalid username or password.' });
-  }
-
-  res.cookie('rf_session', cleanUsername, {
-    signed: true,
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000,
-    sameSite: 'lax',
-    secure: true
-  });
-
-  return res.json({ success: true, username: cleanUsername });
-});
-
-// ── Logout ──
-app.post('/api/logout', (req, res) => {
-  res.clearCookie('rf_session');
-  return res.json({ success: true });
-});
-
-// ── Auth check ──
-app.get('/api/auth/check', (req, res) => {
-  const session = req.signedCookies?.rf_session;
-  if (session) return res.json({ authenticated: true, username: session });
-  return res.status(401).json({ authenticated: false });
 });
 
 const storage = multer.memoryStorage();

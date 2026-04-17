@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ReceiptFlow — CSK Electric</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
@@ -134,11 +135,11 @@
             <div style="font-size:13px;color:#6B7280;margin-top:3px;">CSK Electric — Sign in to continue</div>
         </div>
         <div id="login-error" style="display:none;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:9px 12px;font-size:12.5px;color:#DC2626;margin-bottom:14px;">
-            <i class="fa-solid fa-circle-xmark" style="margin-right:5px;"></i>Invalid username or password
+            <i class="fa-solid fa-circle-xmark" style="margin-right:5px;"></i><span id="login-error-msg">Invalid email or password</span>
         </div>
         <div style="margin-bottom:14px;">
-            <label class="form-label">Username</label>
-            <input class="form-input" type="text" id="login-user" placeholder="Enter username" autocomplete="username">
+            <label class="form-label">Email</label>
+            <input class="form-input" type="email" id="login-user" placeholder="you@example.com" autocomplete="email">
         </div>
         <div style="margin-bottom:20px;">
             <label class="form-label">Password</label>
@@ -184,6 +185,7 @@
             </div>
         </nav>
         <div style="padding:12px 14px;border-top:1px solid #262629;">
+            <div id="sidebar-user" style="font-size:11px;color:#4B5563;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
             <button onclick="doLogout()" style="display:flex;align-items:center;gap:8px;background:none;border:none;color:#6B7280;font-size:12px;cursor:pointer;font-family:inherit;padding:0;">
                 <i class="fa-solid fa-arrow-right-from-bracket" style="font-size:11px;"></i>Sign Out
             </button>
@@ -213,53 +215,121 @@
 <input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none">
 
 <script>
+/* ── Supabase ── */
+let sb = null;
+let currentUser = null;
+
+async function initSupabase() {
+    const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
+    if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+        sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+    }
+}
+
+/* ── Supabase receipt helpers ── */
+function dbToRec(row) {
+    return {
+        id: row.id,
+        vendor: row.vendor,
+        date: row.date,
+        amount: parseFloat(row.amount) || 0,
+        jobNo: row.job_no,
+        status: row.status,
+        invoiceNo: row.invoice_no,
+        category: row.category,
+        savedAt: row.saved_at,
+        total: row.total,
+        items: row.items || [],
+        receiptBlobUrl: row.receipt_blob_url,
+        jobberExpenseId: row.jobber_expense_id,
+        error: row.error
+    };
+}
+
+function recToDb(rec) {
+    return {
+        id: rec.id,
+        user_id: currentUser.id,
+        vendor: rec.vendor || null,
+        date: rec.date || null,
+        amount: parseFloat(rec.amount) || 0,
+        job_no: rec.jobNo || null,
+        status: rec.status,
+        invoice_no: rec.invoiceNo || null,
+        category: rec.category || null,
+        saved_at: rec.savedAt || null,
+        total: rec.total || String(rec.amount || ''),
+        items: rec.items || [],
+        receipt_blob_url: rec.receiptBlobUrl || null,
+        jobber_expense_id: rec.jobberExpenseId || null,
+        error: rec.error || null
+    };
+}
+
+async function loadReceiptsFromSupabase() {
+    if (!sb || !currentUser) return;
+    const { data, error } = await sb.from('receipts')
+        .select('*')
+        .order('created_at', { ascending: false });
+    if (!error && data) {
+        state.history = data.map(dbToRec);
+        updateBadge();
+        render();
+    }
+}
+
+async function upsertReceipt(rec) {
+    if (!sb || !currentUser) return;
+    await sb.from('receipts').upsert(recToDb(rec));
+}
+
+async function updateReceiptStatus(id, fields) {
+    if (!sb || !currentUser) return;
+    const dbFields = {};
+    if (fields.status !== undefined) dbFields.status = fields.status;
+    if (fields.jobNo !== undefined) dbFields.job_no = fields.jobNo;
+    if (fields.jobberExpenseId !== undefined) dbFields.jobber_expense_id = fields.jobberExpenseId;
+    if (fields.savedAt !== undefined) dbFields.saved_at = fields.savedAt;
+    if (fields.error !== undefined) dbFields.error = fields.error;
+    await sb.from('receipts').update(dbFields).eq('id', id).eq('user_id', currentUser.id);
+}
+
 /* ── Auth ── */
 async function doLogin() {
-    const user = document.getElementById('login-user').value.trim();
+    const email = document.getElementById('login-user').value.trim();
     const pass = document.getElementById('login-pass').value;
-    const err = document.getElementById('login-error');
+    const errEl = document.getElementById('login-error');
     const btn = document.getElementById('login-btn');
 
-    if (!user || !pass) return;
+    if (!email || !pass) return;
 
-    err.style.display = 'none';
+    errEl.style.display = 'none';
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Signing in...';
 
     try {
-        const res = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-                username: user,
-                password: pass
-            })
-        });
-
-        if (!res.ok) {
-            err.style.display = 'block';
+        const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+        if (error) {
+            document.getElementById('login-error-msg').textContent = error.message || 'Invalid email or password';
+            errEl.style.display = 'block';
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In';
             return;
         }
-
-        showApp();
+        currentUser = data.user;
+        await showApp();
     } catch (e) {
-        err.style.display = 'block';
+        errEl.style.display = 'block';
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In';
     }
 }
 
 async function doLogout() {
-    try {
-        await fetch('/api/logout', {
-            method: 'POST',
-            credentials: 'include'
-        });
-    } catch (e) {}
-
+    if (sb) await sb.auth.signOut().catch(() => {});
+    currentUser = null;
+    state.history = [];
+    state.receipt = null;
     document.getElementById('app').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('login-user').value = '';
@@ -267,36 +337,43 @@ async function doLogout() {
     document.getElementById('login-error').style.display = 'none';
 }
 
-function showApp() {
+async function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.removeProperty('display');
     document.getElementById('app').style.display = 'flex';
-    try {
-        const saved = localStorage.getItem('receiptflow_history');
-        if (saved) state.history = JSON.parse(saved);
-    } catch {}
+    const sidebarUser = document.getElementById('sidebar-user');
+    if (sidebarUser && currentUser) sidebarUser.textContent = currentUser.email;
+    await loadReceiptsFromSupabase();
     checkHealth();
     updateBadge();
     render();
 }
 
-function authedFetch(url, opts = {}) {
-    opts.credentials = 'include';
+async function authedFetch(url, opts = {}) {
     opts.headers = opts.headers || {};
+    if (sb) {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session?.access_token) opts.headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
     return fetch(url, opts);
 }
 
-// Check if already logged in
-fetch('/api/auth/check', {
-    credentials: 'include'
-})
-    .then(r => r.ok ? showApp() : showLoginScreen())
-    .catch(() => showLoginScreen());
+// Init and check session on load
+(async () => {
+    await initSupabase();
+    if (!sb) { showLoginScreen(); return; }
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+        currentUser = session.user;
+        await showApp();
+    } else {
+        showLoginScreen();
+    }
+})();
 
 function showLoginScreen() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
-    // Enter key on password field
     document.getElementById('login-pass').addEventListener('keydown', e => {
         if (e.key === 'Enter') doLogin();
     });
@@ -345,17 +422,12 @@ const stats = () => {
     };
 };
 
-function persistHistory() {
-    try { localStorage.setItem('receiptflow_history', JSON.stringify(state.history)); } catch {}
-}
-
 function updateBadge() {
     const c = state.history.filter(r => r.status === 'error').length;
     const b = document.getElementById('error-badge');
     if (!b) return;
     b.textContent = c;
     b.style.display = c > 0 ? 'inline' : 'none';
-    persistHistory();
 }
 
 function toast(msg, type = 'info', duration = 3500) {
@@ -1097,18 +1169,22 @@ async function postToJobber() {
         const now = new Date();
         const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
             now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        state.history.unshift({
+        const newRec = {
             id: genId(),
             vendor,
             date,
-            amount: parseFloat(r.total) || 0,  // ensure numeric so Total Extracted updates
+            amount: parseFloat(r.total) || 0,
             jobNo,
             status: 'jobber',
             invoiceNo: invoice,
             category,
             savedAt,
+            total: r.total,
+            receiptBlobUrl: r.receiptBlobUrl || null,
             jobberExpenseId: expData.expenseId || null
-        });
+        };
+        state.history.unshift(newRec);
+        upsertReceipt(newRec).catch(e => console.warn('[supabase] save failed:', e.message));
         updateBadge();
         toast(`Posted to Jobber — Job #${jobNo}`, 'success', 5000);
         setTimeout(() => {
@@ -1122,8 +1198,8 @@ async function postToJobber() {
     }
 }
 
-/* ── Save Only (local history) ── */
-function saveReceipt() {
+/* ── Save Only ── */
+async function saveReceipt() {
     if (!state.receipt) return;
     const r = state.receipt;
 
@@ -1137,7 +1213,7 @@ function saveReceipt() {
     const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
         now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-    state.history.unshift({
+    const rec = {
         id: genId(),
         vendor,
         date,
@@ -1149,11 +1225,12 @@ function saveReceipt() {
         savedAt,
         total: r.total,
         items: r.items || [],
-        receiptBlobUrl: r.receiptBlobUrl || null,
-        imageDataUrl: r.imageDataUrl || null
-    });
+        receiptBlobUrl: r.receiptBlobUrl || null
+    };
 
+    state.history.unshift(rec);
     updateBadge();
+    upsertReceipt(rec).catch(e => console.warn('[supabase] save failed:', e.message));
     toast('Receipt saved to history', 'success');
     navigate('upload');
 }
@@ -1168,7 +1245,7 @@ function flagError() {
     const savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
         now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-    state.history.unshift({
+    const rec = {
         id: genId(),
         vendor,
         date: r.date,
@@ -1177,10 +1254,14 @@ function flagError() {
         status: 'error',
         invoiceNo: r.invoiceNo,
         savedAt,
+        total: r.total,
+        receiptBlobUrl: r.receiptBlobUrl || null,
         error: jobNo ? 'Manually flagged for review' : 'No job number found on receipt'
-    });
+    };
 
+    state.history.unshift(rec);
     updateBadge();
+    upsertReceipt(rec).catch(e => console.warn('[supabase] flag failed:', e.message));
     toast('Receipt flagged and moved to error queue', 'info');
     navigate('upload');
 }
@@ -1220,6 +1301,8 @@ async function postFromHistory(id) {
         const now = new Date();
         rec.savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
             now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        updateReceiptStatus(rec.id, { status: 'jobber', jobberExpenseId: rec.jobberExpenseId, savedAt: rec.savedAt })
+            .catch(e => console.warn('[supabase] update failed:', e.message));
         updateBadge();
         toast(`Posted to Jobber — Job #${rec.jobNo}`, 'success', 5000);
         render();
@@ -1249,6 +1332,8 @@ function saveJobAssign(id) {
         rec.savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
             now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         delete rec.error;
+        updateReceiptStatus(id, { jobNo: val, status: 'posted', savedAt: rec.savedAt, error: null })
+            .catch(e => console.warn('[supabase] update failed:', e.message));
     }
 
     state.editingJobId = null;
