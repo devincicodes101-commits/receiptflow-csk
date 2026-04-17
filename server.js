@@ -601,9 +601,9 @@ app.get('/api/jobber-debug', async (req, res) => {
       query { jobs(first: 5, searchTerm: "${jobNum}") { nodes { id jobNumber title } } }
     `);
 
-    // Test 2: list first 5 jobs (any jobs at all?)
+    // Test 2: list first 5 jobs — try both nodes and edges
     const listResult = await jobberGQL(`
-      query { jobs(first: 5) { nodes { id jobNumber title } pageInfo { hasNextPage endCursor } } }
+      query { jobs(first: 5) { nodes { id jobNumber title } edges { node { id jobNumber title } } pageInfo { hasNextPage endCursor } } }
     `);
 
     // Test 3: introspect Job type fields
@@ -824,65 +824,77 @@ app.post('/api/create-expense', async (req, res) => {
     let job = null;
     let lastError = null;
 
-    // Strategy 1: searchTerm (fast — works if Jobber indexes job numbers)
+    // Helper: extract nodes from either `nodes` or `edges { node }` pattern
+    const extractNodes = (jobsObj) => {
+      if (!jobsObj) return [];
+      if (Array.isArray(jobsObj.nodes) && jobsObj.nodes.length > 0) return jobsObj.nodes;
+      if (Array.isArray(jobsObj.edges) && jobsObj.edges.length > 0) return jobsObj.edges.map(e => e.node).filter(Boolean);
+      if (Array.isArray(jobsObj.nodes)) return jobsObj.nodes; // empty nodes array is still valid
+      return [];
+    };
+
+    // Strategy 1: searchTerm
     for (const term of [numStr, `#${numStr}`]) {
       const result = await jobberGQL(`
         query FindJob($term: String!) {
           jobs(first: 100, searchTerm: $term) {
             nodes { id jobNumber title }
+            edges { node { id jobNumber title } }
           }
         }
       `, { term });
 
-      console.log(`Jobber search (term="${term}"):`, JSON.stringify(result));
+      console.log(`[jobber] searchTerm="${term}" keys:`, Object.keys(result.data?.jobs || {}), 'errors:', result.errors?.length || 0);
 
       if (result.errors?.length) {
         const msg = result.errors[0].message || '';
         if (/unauthori|token|auth/i.test(msg)) {
-          return res.status(401).json({
-            error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.'
-          });
+          return res.status(401).json({ error: 'Jobber session expired. Go to Settings → Authorize Jobber to reconnect.' });
         }
         lastError = msg;
         continue;
       }
 
-      const nodes = result.data?.jobs?.nodes || [];
+      const nodes = extractNodes(result.data?.jobs);
+      console.log(`[jobber] searchTerm="${term}" returned ${nodes.length} jobs:`, nodes.map(j => j.jobNumber));
       job = nodes.find(j => String(j.jobNumber) === numStr);
       if (job) break;
     }
 
-    // Strategy 2: paginate through all jobs (slower but reliable)
+    // Strategy 2: paginate all jobs — supports both nodes and edges patterns
     if (!job) {
-      console.log(`Jobber search missed #${numStr}, falling back to pagination...`);
+      console.log(`[jobber] searchTerm missed #${numStr}, paginating all jobs...`);
       let cursor = null;
-      for (let page = 0; page < 10 && !job; page++) {
-        const vars = cursor ? { cursor } : {};
+      for (let page = 0; page < 20 && !job; page++) {
         const query = cursor
           ? `query PageJobs($cursor: String!) {
               jobs(first: 100, after: $cursor) {
                 nodes { id jobNumber title }
+                edges { node { id jobNumber title } }
                 pageInfo { hasNextPage endCursor }
               }
             }`
           : `query PageJobs {
               jobs(first: 100) {
                 nodes { id jobNumber title }
+                edges { node { id jobNumber title } }
                 pageInfo { hasNextPage endCursor }
               }
             }`;
 
-        const result = await jobberGQL(query, vars);
+        const result = await jobberGQL(query, cursor ? { cursor } : {});
 
         if (result.errors?.length) {
+          console.log(`[jobber] page ${page + 1} error:`, result.errors[0].message);
           lastError = result.errors[0].message || lastError;
           break;
         }
 
-        const nodes = result.data?.jobs?.nodes || [];
-        const pageInfo = result.data?.jobs?.pageInfo || {};
+        const jobsObj = result.data?.jobs;
+        const nodes = extractNodes(jobsObj);
+        const pageInfo = jobsObj?.pageInfo || {};
 
-        console.log(`Jobber page ${page + 1}: ${nodes.length} jobs, hasNext=${pageInfo.hasNextPage}`);
+        console.log(`[jobber] page ${page + 1}: ${nodes.length} jobs, hasNext=${pageInfo.hasNextPage}, responseKeys=${Object.keys(jobsObj || {})}`);
 
         job = nodes.find(j => String(j.jobNumber) === numStr);
         if (job || !pageInfo.hasNextPage) break;
