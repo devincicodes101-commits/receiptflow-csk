@@ -551,7 +551,7 @@ function uploadHTML() {
             <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">
                 <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose File
             </button>
-            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP, PDF — max 4MB</div>
+            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP (max 4MB) · PDF (any size)</div>
         </div>
 
         <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
@@ -1084,16 +1084,39 @@ function filterHistory() {
 }
 
 /* ── File Handling & Extraction ── */
+function applyExtractResult(json) {
+    state.uploading = false;
+    state.receipt = json.data;
+    state.view = 'review';
+    document.getElementById('breadcrumb').innerHTML =
+        '<span style="color:#6B7280;cursor:pointer;text-decoration:underline;text-decoration-color:#D1D5DB;" onclick="navigate(\'upload\')">Upload Receipt</span>' +
+        '<span style="margin:0 6px;color:#D1D5DB;">/</span>' +
+        '<span style="color:#1F2937;font-weight:600;">Review</span>';
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    toast('Receipt analyzed successfully!', 'success');
+    render();
+}
+
 async function handleFile(file) {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
     if (!allowed.includes(file.type)) {
         toast('Please upload a JPG, PNG, WEBP, or PDF file', 'error');
         return;
     }
-    if (file.size > 4 * 1024 * 1024) {
-        toast('File too large. Max 4MB.', 'error');
+
+    const DIRECT_LIMIT = 4 * 1024 * 1024; // 4MB — Vercel serverless body limit
+
+    // Large PDFs: upload directly to Supabase Storage, bypassing Vercel's 4.5MB limit
+    if (file.size > DIRECT_LIMIT && file.type === 'application/pdf') {
+        await handleLargeFile(file);
         return;
     }
+
+    if (file.size > DIRECT_LIMIT) {
+        toast('Images must be under 4MB. For large PDFs there is no size limit.', 'error');
+        return;
+    }
+
     state.uploading = true;
     render();
 
@@ -1102,38 +1125,62 @@ async function handleFile(file) {
 
     try {
         const res = await authedFetch(API_BASE + '/api/extract', { method: 'POST', body: formData });
-
-        if (res.status === 401) {
-            doLogout();
-            return;
-        }
-
+        if (res.status === 401) { doLogout(); return; }
         const contentType = res.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
-            const text = await res.text();
-            throw new Error(text || `Server error (${res.status})`);
+            throw new Error((await res.text()) || `Server error (${res.status})`);
         }
-
         const json = await res.json();
         if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
-
-        state.uploading = false;
-        state.receipt = json.data;
-        state.view = 'review';
-
-        document.getElementById('breadcrumb').innerHTML =
-            '<span style="color:#6B7280;cursor:pointer;text-decoration:underline;text-decoration-color:#D1D5DB;" onclick="navigate(\'upload\')">Upload Receipt</span>' +
-            '<span style="margin:0 6px;color:#D1D5DB;">/</span>' +
-            '<span style="color:#1F2937;font-weight:600;">Review</span>';
-
-        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-        toast('Receipt analyzed successfully!', 'success');
-        render();
-
+        applyExtractResult(json);
     } catch (err) {
         state.uploading = false;
         render();
         toast('Error: ' + (err.message || 'Could not extract receipt'), 'error', 5000);
+        console.error(err);
+    }
+}
+
+async function handleLargeFile(file) {
+    if (!sb || !currentUser) { toast('Not signed in', 'error'); return; }
+    state.uploading = true;
+    render();
+    toast('Uploading large PDF…', 'info');
+
+    try {
+        // Upload directly to Supabase Storage (no Vercel serverless involved)
+        const path = `${currentUser.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const { error: upErr } = await sb.storage
+            .from('receipts')
+            .upload(path, file, { contentType: file.type, upsert: false });
+        if (upErr) throw new Error('Storage upload failed: ' + upErr.message);
+
+        // Get a 1-year signed URL for the backend to fetch and for long-term storage
+        const { data: urlData, error: urlErr } = await sb.storage
+            .from('receipts')
+            .createSignedUrl(path, 31536000);
+        if (urlErr || !urlData?.signedUrl) throw new Error('Could not get file URL');
+
+        toast('Processing PDF…', 'info');
+
+        const res = await authedFetch(API_BASE + '/api/extract-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileUrl: urlData.signedUrl, mimeType: file.type, originalName: file.name })
+        });
+        if (res.status === 401) { doLogout(); return; }
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            throw new Error((await res.text()) || `Server error (${res.status})`);
+        }
+        const json = await res.json();
+        if (!res.ok || !json.success) throw new Error(json.error || 'Extraction failed');
+
+        applyExtractResult(json);
+    } catch (err) {
+        state.uploading = false;
+        render();
+        toast('Error: ' + (err.message || 'Could not process PDF'), 'error', 5000);
         console.error(err);
     }
 }

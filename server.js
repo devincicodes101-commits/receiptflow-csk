@@ -550,6 +550,46 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
   }
 });
 
+// ── Extract from URL (large files uploaded directly to Supabase Storage) ──
+app.post('/api/extract-url', async (req, res) => {
+  try {
+    const { fileUrl, mimeType, originalName } = req.body || {};
+    if (!fileUrl) return res.status(400).json({ error: 'No fileUrl provided' });
+
+    const mType = (mimeType || 'application/pdf').trim();
+    console.log('[extract-url] fetching:', originalName, '| mime:', mType);
+
+    const fileRes = await fetch(fileUrl);
+    if (!fileRes.ok) return res.status(400).json({ error: 'Could not download file' });
+
+    const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+    console.log('[extract-url] downloaded', fileBuffer.length, 'bytes');
+
+    const geminiOutput = await parseWithGemini(fileBuffer, mType);
+    const fields = extractFieldsFromLlama(geminiOutput);
+
+    return res.json({
+      success: true,
+      data: {
+        markdown: geminiOutput,
+        imageDataUrl: null,
+        receiptBlobUrl: fileUrl,
+        isPdf: mType === 'application/pdf',
+        vendor: fields.vendor || null,
+        invoiceNo: fields.invoiceNo || null,
+        date: fields.date || null,
+        total: fields.total || null,
+        jobNo: fields.jobNo || null,
+        jobStatus: fields.jobNo ? 'found' : 'missing',
+        items: fields.items || [],
+      }
+    });
+  } catch (err) {
+    console.error('[extract-url] error:', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
 // ── Jobber debug endpoint (visit /api/jobber-debug?job=1249 in browser) ──
 app.get('/api/jobber-debug', async (req, res) => {
   try {
