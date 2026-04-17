@@ -271,6 +271,10 @@ function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.removeProperty('display');
     document.getElementById('app').style.display = 'flex';
+    try {
+        const saved = localStorage.getItem('receiptflow_history');
+        if (saved) state.history = JSON.parse(saved);
+    } catch {}
     checkHealth();
     updateBadge();
     render();
@@ -341,12 +345,17 @@ const stats = () => {
     };
 };
 
+function persistHistory() {
+    try { localStorage.setItem('receiptflow_history', JSON.stringify(state.history)); } catch {}
+}
+
 function updateBadge() {
     const c = state.history.filter(r => r.status === 'error').length;
     const b = document.getElementById('error-badge');
     if (!b) return;
     b.textContent = c;
     b.style.display = c > 0 ? 'inline' : 'none';
+    persistHistory();
 }
 
 function toast(msg, type = 'info', duration = 3500) {
@@ -706,7 +715,7 @@ function historyHTML() {
                     <thead>
                         <tr>
                             <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
-                            <th>Amount</th><th>Job #</th><th>Status</th><th>Saved At</th>
+                            <th>Amount</th><th>Job #</th><th>Status</th><th>Saved At</th><th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="history-tbody">
@@ -719,6 +728,10 @@ function historyHTML() {
                         <td><span style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
                         <td><span class="badge badge-${r.status === 'jobber' ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${r.status === 'jobber' ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
                         <td style="color:#9CA3AF;font-size:12px;white-space:nowrap;">${r.savedAt || '—'}</td>
+                        <td>${r.status === 'posted'
+                            ? `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${r.id}')">Post to Jobber</button>`
+                            : r.status === 'jobber' ? '<span style="font-size:12px;color:#059669;">&#10003; Posted</span>' : '—'
+                        }</td>
                     </tr>`).join('')}
                     </tbody>
                 </table>
@@ -1133,7 +1146,11 @@ function saveReceipt() {
         status: 'posted',
         invoiceNo: invoice,
         category,
-        savedAt
+        savedAt,
+        total: r.total,
+        items: r.items || [],
+        receiptBlobUrl: r.receiptBlobUrl || null,
+        imageDataUrl: r.imageDataUrl || null
     });
 
     updateBadge();
@@ -1166,6 +1183,50 @@ function flagError() {
     updateBadge();
     toast('Receipt flagged and moved to error queue', 'info');
     navigate('upload');
+}
+
+/* ── Post saved receipt to Jobber from history ── */
+async function postFromHistory(id) {
+    const rec = state.history.find(r => r.id === id);
+    if (!rec) return;
+    if (!rec.jobNo) {
+        toast('No job number on this receipt — assign one first', 'warning');
+        return;
+    }
+
+    const btn = document.querySelector(`[onclick="postFromHistory('${id}')"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Posting…'; }
+
+    try {
+        const expRes = await authedFetch(API_BASE + '/api/create-expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vendor: rec.vendor,
+                invoiceNo: rec.invoiceNo,
+                date: rec.date,
+                total: rec.total || rec.amount,
+                jobNo: rec.jobNo,
+                category: rec.category,
+                receiptBlobUrl: rec.receiptBlobUrl || null
+            })
+        });
+        const expData = await expRes.json();
+        if (!expRes.ok || (!expData.success && !expData.expenseId)) {
+            throw new Error(expData.error || 'Failed to create expense in Jobber');
+        }
+        rec.status = 'jobber';
+        rec.jobberExpenseId = expData.expenseId || 'created';
+        const now = new Date();
+        rec.savedAt = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+            now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        updateBadge();
+        toast(`Posted to Jobber — Job #${rec.jobNo}`, 'success', 5000);
+        render();
+    } catch (err) {
+        toast('Jobber error: ' + (err.message || 'Unknown error'), 'error', 6000);
+        if (btn) { btn.disabled = false; btn.textContent = 'Post to Jobber'; }
+    }
 }
 
 /* ── Error Queue Actions ── */
