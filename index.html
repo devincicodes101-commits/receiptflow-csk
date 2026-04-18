@@ -436,8 +436,12 @@ async function autoProcessPending() {
         const badge = document.getElementById('gmail-badge');
         if (badge) { badge.style.display = ''; badge.textContent = data.length; }
 
+        // Deduplicate by file_url — keep earliest occurrence only
+        const seenUrls = new Set();
+        const unique = data.filter(r => { if (seenUrls.has(r.file_url)) return false; seenUrls.add(r.file_url); return true; });
+
         let posted = 0, failed = 0;
-        for (const row of data) {
+        for (const row of unique) {
             const result = await processGmailRow(row);
             if (result.success && result.jobberPosted) posted++;
             else if (!result.success) failed++;
@@ -924,11 +928,11 @@ function historyHTML() {
                         <td style="font-family:monospace;font-size:12px;color:#6B7280;">${escHtml(r.invoiceNo || '—')}</td>
                         <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
                         <td><span style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
-                        <td><span class="badge badge-${r.status === 'jobber' ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${r.status === 'jobber' ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
+                        <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
                         <td style="color:#9CA3AF;font-size:12px;white-space:nowrap;">${r.savedAt || '—'}</td>
-                        <td>${r.status === 'posted'
-                            ? `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${r.id}')">Post to Jobber</button>`
-                            : r.status === 'jobber' ? '<span style="font-size:12px;color:#059669;">&#10003; Posted</span>' : '—'
+                        <td>${(r.jobberExpenseId || r.status === 'jobber')
+                            ? '<span style="font-size:12px;color:#4F46E5;font-weight:600;">&#10003; In Jobber</span>'
+                            : r.status === 'posted' ? `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${r.id}')">Post to Jobber</button>` : '—'
                         }</td>
                         <td><button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.id}')" title="Delete"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button></td>
                     </tr>`).join('')}
@@ -1097,8 +1101,11 @@ async function processSingleRow(id) {
 }
 
 async function triggerProcessNow() {
-    const pending = gmailRows.filter(r => r.status === 'pending' || r.status === 'failed');
-    if (!pending.length) { toast('No pending receipts to process', 'info'); return; }
+    const allPending = gmailRows.filter(r => r.status === 'pending' || r.status === 'failed');
+    if (!allPending.length) { toast('No pending receipts to process', 'info'); return; }
+    // Deduplicate by file_url
+    const seenUrls2 = new Set();
+    const pending = allPending.filter(r => { if (seenUrls2.has(r.file_url)) return false; seenUrls2.add(r.file_url); return true; });
     const btn = document.getElementById('process-now-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing…'; }
     let posted = 0, savedOnly = 0, fail = 0;
