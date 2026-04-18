@@ -1,5 +1,11 @@
 {
   "version": 2,
+  "crons": [
+    {
+      "path": "/api/process-incoming",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "builds": [
     {
       "src": "index.html",
