@@ -417,6 +417,49 @@ async function showApp() {
     checkHealth();
     updateBadge();
     render();
+
+    // Auto-process any pending Gmail receipts on login (silent, background)
+    setTimeout(autoProcessPending, 3000);
+
+    // Poll every 2 minutes for new pending receipts
+    if (window._gmailPollTimer) clearInterval(window._gmailPollTimer);
+    window._gmailPollTimer = setInterval(autoProcessPending, 2 * 60 * 1000);
+}
+
+async function autoProcessPending() {
+    if (!sb || !currentUser) return;
+    try {
+        const { data } = await sb.from('incoming_receipts').select('*').eq('status', 'pending').order('created_at', { ascending: true });
+        if (!data || data.length === 0) return;
+
+        // Update badge
+        const badge = document.getElementById('gmail-badge');
+        if (badge) { badge.style.display = ''; badge.textContent = data.length; }
+
+        let posted = 0, failed = 0;
+        for (const row of data) {
+            const result = await processGmailRow(row);
+            if (result.success && result.jobberPosted) posted++;
+            else if (!result.success) failed++;
+        }
+
+        // Refresh gmail view if open
+        if (state.view === 'gmail') await loadGmailReceipts();
+
+        // Update badge
+        const { data: remaining } = await sb.from('incoming_receipts').select('id').eq('status', 'pending');
+        const pendingCount = remaining?.length || 0;
+        if (badge) { badge.style.display = pendingCount > 0 ? '' : 'none'; badge.textContent = pendingCount; }
+
+        if (posted > 0) toast(`${posted} Gmail receipt${posted > 1 ? 's' : ''} posted to Jobber`, 'success', 5000);
+        if (failed > 0) toast(`${failed} Gmail receipt${failed > 1 ? 's' : ''} failed — check Gmail section`, 'error', 6000);
+
+        // Refresh history
+        await loadReceiptsFromSupabase();
+        if (state.view === 'history' || state.view === 'upload') render();
+    } catch (e) {
+        console.warn('[autoProcess] error:', e.message);
+    }
 }
 
 async function authedFetch(url, opts = {}) {
@@ -1047,23 +1090,28 @@ async function processSingleRow(id) {
     if (!row) return;
     toast('Processing receipt…', 'info');
     const result = await processGmailRow(row);
-    if (result.success) toast('Receipt processed and posted to Jobber!', 'success', 5000);
+    if (result.success && result.jobberPosted) toast('Posted to Jobber!', 'success', 5000);
+    else if (result.success && !result.jobberPosted) toast('Processed but Jobber failed: ' + (result.jobberError || 'Unknown'), 'warning', 7000);
     else toast('Failed: ' + (result.error || 'Unknown error'), 'error', 6000);
     await loadGmailReceipts();
 }
 
 async function triggerProcessNow() {
-    const pending = gmailRows.filter(r => r.status === 'pending');
+    const pending = gmailRows.filter(r => r.status === 'pending' || r.status === 'failed');
     if (!pending.length) { toast('No pending receipts to process', 'info'); return; }
     const btn = document.getElementById('process-now-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing…'; }
-    let ok = 0, fail = 0;
+    let posted = 0, savedOnly = 0, fail = 0;
     for (const row of pending) {
         const result = await processGmailRow(row);
-        if (result.success) ok++; else fail++;
+        if (result.success && result.jobberPosted) posted++;
+        else if (result.success) { savedOnly++; }
+        else fail++;
     }
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Process Now'; }
-    toast(`Done — ${ok} posted to Jobber${fail ? `, ${fail} failed` : ''}`, ok > 0 ? 'success' : 'error', 6000);
+    if (posted > 0) toast(`${posted} posted to Jobber!`, 'success', 5000);
+    if (savedOnly > 0) toast(`${savedOnly} saved but not posted to Jobber — check job numbers`, 'warning', 7000);
+    if (fail > 0) toast(`${fail} failed — check errors column`, 'error', 6000);
     await loadGmailReceipts();
 }
 
@@ -1133,7 +1181,7 @@ async function processGmailRow(row) {
             processed_at: new Date().toISOString()
         }).eq('id', row.id);
 
-        return { success: true };
+        return { success: true, jobberPosted: !!jobberExpenseId, jobberError };
 
     } catch (err) {
         await sb.from('incoming_receipts').update({
