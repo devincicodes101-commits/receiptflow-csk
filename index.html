@@ -117,6 +117,54 @@
         .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #111113 0%, #1C1C1F 100%); }
         .login-card { background: #fff; border-radius: 14px; padding: 36px 32px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
 
+        /* Responsive layout helpers */
+        .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 22px; }
+        .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .review-layout { display: flex; gap: 22px; max-width: 980px; }
+        .review-sidebar { width: 360px; flex-shrink: 0; }
+        .review-main { flex: 1; min-width: 0; }
+        .action-bar { display: flex; gap: 8px; padding-top: 16px; border-top: 1px solid #E5E7EB; flex-wrap: wrap; }
+        .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .mobile-menu-btn { display: none !important; }
+        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 998; }
+
+        @media (max-width: 768px) {
+            /* Sidebar becomes a slide-in drawer */
+            .sidebar { position: fixed; top: 0; left: -240px; height: 100vh; z-index: 999; transition: left 0.25s ease; width: 240px !important; min-width: 240px !important; }
+            .sidebar.open { left: 0; box-shadow: 4px 0 24px rgba(0,0,0,0.4); }
+            .sidebar-overlay.show { display: block; }
+            .mobile-menu-btn { display: flex !important; }
+
+            /* Content */
+            #content { padding: 14px !important; }
+            header { padding: 0 14px !important; }
+
+            /* Stats: 2 columns */
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .stat-value { font-size: 18px; }
+
+            /* Review: stack vertically */
+            .review-layout { flex-direction: column; }
+            .review-sidebar { width: 100% !important; }
+            .review-sidebar .receipt-img-wrap { height: 220px !important; }
+
+            /* Form: single column */
+            .form-grid-2 { grid-template-columns: 1fr; }
+
+            /* Action buttons: full width */
+            .action-bar { gap: 8px; }
+            .action-bar .btn { flex: 1; justify-content: center; min-width: 0; }
+
+            /* Login */
+            .login-card { width: calc(100vw - 32px); padding: 28px 20px; border-radius: 10px; }
+
+            /* Upload zone */
+            .upload-zone { padding: 36px 20px; }
+
+            /* History search bar */
+            #history-search { width: 140px !important; }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
         }
@@ -152,6 +200,7 @@
 </div>
 
 <!-- ── Main App ── -->
+<div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
 <div id="app" class="flex h-screen overflow-hidden" style="display:none !important;">
 
     <!-- Sidebar -->
@@ -195,8 +244,13 @@
     <!-- Main -->
     <div class="flex-1 flex flex-col overflow-hidden">
         <header style="height:48px;border-bottom:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;">
-            <div id="breadcrumb" style="font-size:13px;color:#6B7280;">
-                <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <button class="mobile-menu-btn btn btn-ghost" onclick="toggleSidebar()" style="padding:6px 8px;">
+                    <i class="fa-solid fa-bars" style="font-size:16px;color:#374151;"></i>
+                </button>
+                <div id="breadcrumb" style="font-size:13px;color:#6B7280;">
+                    <span style="color:#1F2937;font-weight:600;">Upload Receipt</span>
+                </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
                 <span id="jobber-status" style="display:none;"></span>
@@ -484,7 +538,18 @@ async function checkHealth() {
 }
 
 /* ── Navigation ── */
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.getElementById('sidebar-overlay').classList.toggle('show');
+}
+
+function closeSidebar() {
+    document.querySelector('.sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('show');
+}
+
 function navigate(view) {
+    closeSidebar();
     state.view = view;
     state.uploading = false;
     state.receipt = null;
@@ -521,7 +586,7 @@ function uploadHTML() {
     const s = stats();
     const hasHistory = state.history.length > 0;
     return `<div class="fade-in" style="max-width:860px;">
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
+        <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-value">${s.total}</div>
                 <div class="stat-label">Total Processed</div>
@@ -625,11 +690,11 @@ function reviewHTML() {
         ? '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Posting...'
         : '<i class="fa-solid fa-paper-plane" style="font-size:12px;"></i> Post to Jobber';
 
-    return `<div class="fade-in" style="max-width:980px;">
-        <div style="display:flex;gap:22px;">
+    return `<div class="fade-in">
+        <div class="review-layout">
 
             <!-- Receipt Image -->
-            <div style="width:360px;flex-shrink:0;">
+            <div class="review-sidebar">
                 <div class="receipt-img-wrap" style="height:500px;">
                     ${r.isPdf
                         ? `<div style="text-align:center;padding:40px 20px;">
@@ -662,7 +727,7 @@ function reviewHTML() {
             </div>
 
             <!-- Extracted Data -->
-            <div style="flex:1;min-width:0;">
+            <div class="review-main">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
                     <div style="font-size:16px;font-weight:700;color:#111827;">Extracted Receipt Details</div>
                     <span style="font-size:11px;color:#9CA3AF;background:#F3F4F6;padding:3px 8px;border-radius:4px;">
@@ -670,7 +735,7 @@ function reviewHTML() {
                     </span>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div class="form-grid-2">
                     <div>
                         <label class="form-label">Vendor / Store</label>
                         <input class="form-input" value="${escHtml(r.vendor || '')}" id="f-vendor">
@@ -750,7 +815,7 @@ function reviewHTML() {
                 </div>
 
                 <!-- Actions -->
-                <div style="display:flex;gap:8px;padding-top:16px;border-top:1px solid #E5E7EB;flex-wrap:wrap;">
+                <div class="action-bar">
                     <button class="btn btn-jobber" id="btn-jobber" ${state.postingToJobber ? 'disabled' : ''}>
                         ${jobberBtnLabel}
                     </button>
@@ -795,7 +860,7 @@ function historyHTML() {
                 <div style="font-size:13px;color:#9CA3AF;">Upload a receipt to get started</div>
                </div>`
             : `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
-                <table class="data-table">
+                <div class="table-wrap"><table class="data-table">
                     <thead>
                         <tr>
                             <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
@@ -818,7 +883,7 @@ function historyHTML() {
                         }</td>
                     </tr>`).join('')}
                     </tbody>
-                </table>
+                </table></div>
                </div>`
         }
     </div>`;
@@ -837,7 +902,7 @@ function errorsHTML() {
         <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:4px;">Error Queue</div>
         <div style="font-size:12.5px;color:#6B7280;margin-bottom:16px;">These receipts need attention. Assign a job number to post to Jobber.</div>
         <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
-            <table class="data-table">
+            <div class="table-wrap"><table class="data-table">
                 <thead>
                     <tr><th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Job Number</th><th>Reason</th><th style="width:160px;">Action</th></tr>
                 </thead>
@@ -862,7 +927,7 @@ function errorsHTML() {
                     }</td>
                 </tr>`).join('')}
                 </tbody>
-            </table>
+            </table></div>
         </div>
     </div>`;
 }
