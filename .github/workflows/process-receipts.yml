@@ -1,0 +1,16 @@
+name: Process Incoming Receipts
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger receipt processing
+        run: |
+          curl -s -X POST https://receiptflow-csk.vercel.app/api/process-incoming \
+            -H "x-process-secret: ${{ secrets.PROCESS_SECRET }}" \
+            -w "\nHTTP %{http_code}" | tail -20

@@ -40,6 +40,12 @@ app.get('/api/config', (req, res) => {
 
 // ── Automated incoming receipt processor — registered BEFORE auth middleware ──
 app.all('/api/process-incoming', async (req, res) => {
+  const secret = (process.env.PROCESS_SECRET || '').trim();
+  if (secret) {
+    const provided = (req.headers['x-process-secret'] || '').trim();
+    if (provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const sb = await getSupabaseAdmin();
 
   const { data: pending, error: selectErr } = await sb
