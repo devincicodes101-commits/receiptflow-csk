@@ -1068,7 +1068,7 @@ async function loadGmailReceipts() {
     }
 
     const statusBadge = (s) => {
-        if (s === 'done')       return `<span class="badge badge-jobber">Done</span>`;
+        if (s === 'done')       return `<span class="badge badge-posted">✓ In Jobber</span>`;
         if (s === 'failed')     return `<span class="badge badge-error">Failed</span>`;
         if (s === 'processing') return `<span class="badge badge-processing">Processing…</span>`;
         return `<span class="badge" style="background:#F3F4F6;color:#6B7280;">Pending</span>`;
@@ -1116,44 +1116,40 @@ async function triggerProcessNow() {
 }
 
 async function processGmailRow(row) {
-    // Mark as processing in DB
     await sb.from('incoming_receipts').update({ status: 'processing' }).eq('id', row.id);
 
+    const failRow = async (msg) => {
+        await sb.from('incoming_receipts').update({
+            status: 'failed', error: msg, processed_at: new Date().toISOString()
+        }).eq('id', row.id);
+        return { success: false, error: msg };
+    };
+
     try {
-        // 1. Extract via Gemini (reuses /api/extract-url which is already working)
+        // 1. Extract via Gemini
         const extractRes = await authedFetch('/api/extract-url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fileUrl: row.file_url, mimeType: 'application/pdf', originalName: row.file_name })
         });
         const extractData = await extractRes.json();
-        if (!extractData.success) throw new Error(extractData.error || 'Extraction failed');
+        if (!extractData.success) return failRow(extractData.error || 'Gemini extraction failed');
 
         const { vendor, invoiceNo, date, total, jobNo, items } = extractData.data;
 
-        // 2. Auto-post to Jobber if job number found
-        let jobberExpenseId = null;
-        let jobberError = null;
+        // 2. Job number is required — no silent save
+        if (!jobNo) return failRow('No job number found on receipt');
 
-        if (jobNo) {
-            try {
-                const expRes = await authedFetch('/api/create-expense', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBlobUrl: row.file_url })
-                });
-                const expData = await expRes.json();
-                if (expData.success) {
-                    jobberExpenseId = expData.expenseId;
-                } else {
-                    jobberError = expData.error || 'Jobber post failed';
-                }
-            } catch (e) {
-                jobberError = e.message;
-            }
-        }
+        // 3. Post to Jobber — required
+        const expRes = await authedFetch('/api/create-expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBlobUrl: row.file_url })
+        });
+        const expData = await expRes.json();
+        if (!expData.success) return failRow(expData.error || 'Jobber post failed');
 
-        // 3. Save to receipts history (same as manual flow)
+        // 4. Save to receipts history as posted
         const rec = {
             id: crypto.randomUUID(),
             vendor: vendor || null,
@@ -1164,9 +1160,9 @@ async function processGmailRow(row) {
             invoiceNo: invoiceNo || null,
             items: items || [],
             receiptBlobUrl: row.file_url || null,
-            jobberExpenseId: jobberExpenseId || null,
-            status: jobberExpenseId ? 'posted' : (jobNo ? 'error' : 'saved'),
-            error: jobberError || null,
+            jobberExpenseId: expData.expenseId || null,
+            status: 'posted',
+            error: null,
             savedAt: new Date().toISOString(),
             category: null
         };
@@ -1174,22 +1170,15 @@ async function processGmailRow(row) {
         updateBadge();
         await upsertReceipt(rec);
 
-        // 4. Mark incoming row done
+        // 5. Mark incoming row done
         await sb.from('incoming_receipts').update({
-            status: 'done',
-            error: jobberError || null,
-            processed_at: new Date().toISOString()
+            status: 'done', error: null, processed_at: new Date().toISOString()
         }).eq('id', row.id);
 
-        return { success: true, jobberPosted: !!jobberExpenseId, jobberError };
+        return { success: true, jobberPosted: true };
 
     } catch (err) {
-        await sb.from('incoming_receipts').update({
-            status: 'failed',
-            error: err.message,
-            processed_at: new Date().toISOString()
-        }).eq('id', row.id);
-        return { success: false, error: err.message };
+        return failRow(err.message || 'Unknown error');
     }
 }
 

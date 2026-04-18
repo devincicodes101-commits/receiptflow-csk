@@ -498,6 +498,19 @@ function extractFieldsFromLlama(content) {
       jobNo = m[1];
       break;
     }
+
+    // Handle "1391-RETURN", "1095-CREDIT" etc. with suffix after dash
+    m = val.match(/^(\d{3,7})-[A-Z]/i);
+    if (m) {
+      jobNo = m[1];
+      break;
+    }
+  }
+
+  // Fallback: scan raw text for NNNN-RETURN / NNNN-CREDIT patterns
+  if (!jobNo) {
+    const returnMatch = content.match(/\b(\d{3,7})[-–]\s*(?:RETURN|CREDIT|RMA|VOID)\b/i);
+    if (returnMatch) jobNo = returnMatch[1];
   }
 
   // Collect ALL items tables (multi-page PDFs may produce separate tables per page)
