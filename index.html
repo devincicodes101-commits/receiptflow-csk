@@ -864,7 +864,7 @@ function historyHTML() {
                     <thead>
                         <tr>
                             <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
-                            <th>Amount</th><th>Job #</th><th>Status</th><th>Saved At</th><th>Action</th>
+                            <th>Amount</th><th>Job #</th><th>Status</th><th>Saved At</th><th>Action</th><th></th>
                         </tr>
                     </thead>
                     <tbody id="history-tbody">
@@ -881,6 +881,7 @@ function historyHTML() {
                             ? `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${r.id}')">Post to Jobber</button>`
                             : r.status === 'jobber' ? '<span style="font-size:12px;color:#059669;">&#10003; Posted</span>' : '—'
                         }</td>
+                        <td><button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.id}')" title="Delete"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button></td>
                     </tr>`).join('')}
                     </tbody>
                 </table></div>
@@ -1434,6 +1435,19 @@ async function postFromHistory(id) {
         toast('Jobber error: ' + (err.message || 'Unknown error'), 'error', 6000);
         if (btn) { btn.disabled = false; btn.textContent = 'Post to Jobber'; }
     }
+}
+
+/* ── Delete receipt ── */
+async function deleteReceipt(id) {
+    if (!confirm('Delete this receipt? This cannot be undone.')) return;
+    state.history = state.history.filter(r => r.id !== id);
+    updateBadge();
+    render();
+    if (sb && currentUser) {
+        sb.from('receipts').delete().eq('id', id).eq('user_id', currentUser.id)
+            .then(({ error }) => { if (error) console.warn('[supabase] delete failed:', error.message); });
+    }
+    toast('Receipt deleted', 'info');
 }
 
 /* ── Error Queue Actions ── */
