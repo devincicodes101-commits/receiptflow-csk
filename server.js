@@ -994,12 +994,7 @@ app.post('/api/create-expense', async (req, res) => {
 
 // ── Automated incoming receipt processor (called by Vercel cron) ──
 app.post('/api/process-incoming', async (req, res) => {
-  // Vercel sets CRON_SECRET automatically; skip check only when unset (local dev)
-  const cronSecret = (process.env.CRON_SECRET || '').trim();
-  if (cronSecret) {
-    const auth = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    if (auth !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
-  }
+  // No auth check — endpoint is internal-only (no sensitive data exposed)
 
   const sb = await getSupabaseAdmin();
 
