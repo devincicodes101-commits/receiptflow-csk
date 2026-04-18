@@ -993,7 +993,7 @@ app.post('/api/create-expense', async (req, res) => {
 });
 
 // ── Automated incoming receipt processor (called by Vercel cron) ──
-app.post('/api/process-incoming', async (req, res) => {
+app.all('/api/process-incoming', async (req, res) => {
   // No auth check — endpoint is internal-only (no sensitive data exposed)
 
   const sb = await getSupabaseAdmin();
