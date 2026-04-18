@@ -241,6 +241,7 @@ app.all('/api/process-incoming', async (req, res) => {
 
 // ── Auth middleware — verifies Supabase JWT ──
 app.use(async (req, res, next) => {
+  if (req.path === '/api/process-incoming') return next();
   const open = [
     '/api/config',
     '/api/health',
@@ -828,6 +829,7 @@ app.get('/api/jobber-debug', async (req, res) => {
 app.get('/api/health', (req, res) => {
   return res.json({
     status: 'ok',
+    version: 'v5',
     model: GEMINI_MODEL,
     jobberConfigured: !!(
       (process.env.JOBBER_CLIENT_ID || '').trim() &&
