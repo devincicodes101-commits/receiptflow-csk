@@ -228,6 +228,10 @@
                 <i class="fa-solid fa-triangle-exclamation"></i>Error Queue
                 <span class="nav-badge" id="error-badge" style="display:none;">0</span>
             </div>
+            <div class="nav-item" data-view="gmail" onclick="navigate('gmail')">
+                <i class="fa-solid fa-envelope"></i>Gmail Receipts
+                <span class="nav-badge" id="gmail-badge" style="display:none;">0</span>
+            </div>
             <div style="padding:14px 14px 6px;font-size:10px;font-weight:600;color:#4B5563;text-transform:uppercase;letter-spacing:0.08em;">System</div>
             <div class="nav-item" data-view="settings" onclick="navigate('settings')">
                 <i class="fa-solid fa-gear"></i>Settings
@@ -558,7 +562,8 @@ function navigate(view) {
     document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === view));
     const titles = {
         upload: 'Upload Receipt', history: 'Processing History',
-        errors: 'Error Queue', settings: 'Settings', review: 'Review Receipt'
+        errors: 'Error Queue', settings: 'Settings', review: 'Review Receipt',
+        gmail: 'Gmail Receipts'
     };
     const bc = document.getElementById('breadcrumb');
     if (view === 'review') {
@@ -578,6 +583,7 @@ function render() {
     else if (state.view === 'history') el.innerHTML = historyHTML();
     else if (state.view === 'errors') el.innerHTML = errorsHTML();
     else if (state.view === 'settings') el.innerHTML = settingsHTML();
+    else if (state.view === 'gmail') { el.innerHTML = gmailHTML(); loadGmailReceipts(); }
     bind();
 }
 
@@ -931,6 +937,129 @@ function errorsHTML() {
             </table></div>
         </div>
     </div>`;
+}
+
+/* ── Gmail Receipts View ── */
+let gmailRows = [];
+
+function gmailHTML() {
+    return `<div class="fade-in" style="max-width:960px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+            <div>
+                <div style="font-size:17px;font-weight:700;color:#111827;">Gmail Receipts</div>
+                <div style="font-size:12px;color:#6B7280;margin-top:2px;">Receipts emailed in via n8n — processed automatically</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="loadGmailReceipts()">
+                    <i class="fa-solid fa-rotate-right"></i> Refresh
+                </button>
+                <button class="btn btn-primary btn-sm" id="process-now-btn" onclick="triggerProcessNow()">
+                    <i class="fa-solid fa-bolt"></i> Process Now
+                </button>
+            </div>
+        </div>
+        <div id="gmail-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;"></div>
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr>
+                        <th>From</th>
+                        <th>Subject</th>
+                        <th>File</th>
+                        <th>Received</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                    </tr></thead>
+                    <tbody id="gmail-tbody">
+                        <tr><td colspan="6" style="text-align:center;color:#9CA3AF;padding:32px;">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>`;
+}
+
+async function loadGmailReceipts() {
+    if (!sb) return;
+    const tbody = document.getElementById('gmail-tbody');
+    const statsEl = document.getElementById('gmail-stats');
+    if (!tbody) return;
+
+    const { data, error } = await sb
+        .from('incoming_receipts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+    if (error) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#DC2626;padding:24px;">${error.message}</td></tr>`;
+        return;
+    }
+
+    gmailRows = data || [];
+
+    // Stats
+    const pending = gmailRows.filter(r => r.status === 'pending').length;
+    const processing = gmailRows.filter(r => r.status === 'processing').length;
+    const done = gmailRows.filter(r => r.status === 'done').length;
+    const failed = gmailRows.filter(r => r.status === 'failed').length;
+
+    // Update badge
+    const badge = document.getElementById('gmail-badge');
+    if (badge) {
+        badge.style.display = pending > 0 ? '' : 'none';
+        badge.textContent = pending;
+    }
+
+    if (statsEl) statsEl.innerHTML = `
+        <div class="stat-card"><div class="stat-value">${gmailRows.length}</div><div class="stat-label">Total</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#D97706;">${pending + processing}</div><div class="stat-label">Pending</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#059669;">${done}</div><div class="stat-label">Done</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#DC2626;">${failed}</div><div class="stat-label">Failed</div></div>
+    `;
+
+    if (!gmailRows.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#9CA3AF;padding:32px;">No emailed receipts yet</td></tr>`;
+        return;
+    }
+
+    const statusBadge = (s) => {
+        if (s === 'done')       return `<span class="badge badge-jobber">Done</span>`;
+        if (s === 'failed')     return `<span class="badge badge-error">Failed</span>`;
+        if (s === 'processing') return `<span class="badge badge-processing">Processing…</span>`;
+        return `<span class="badge" style="background:#F3F4F6;color:#6B7280;">Pending</span>`;
+    };
+
+    tbody.innerHTML = gmailRows.map(r => `<tr>
+        <td style="font-size:12px;color:#374151;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_from||'').replace(/"/g,'&quot;')}">${r.email_from || '—'}</td>
+        <td style="font-size:12px;color:#374151;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_subject||'').replace(/"/g,'&quot;')}">${r.email_subject || '—'}</td>
+        <td style="font-size:12px;font-family:monospace;color:#6B7280;">${r.file_name || '—'}</td>
+        <td style="font-size:11.5px;color:#6B7280;white-space:nowrap;">${r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td style="font-size:11.5px;color:#DC2626;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.error||'').replace(/"/g,'&quot;')}">${r.error || ''}</td>
+    </tr>`).join('');
+}
+
+async function triggerProcessNow() {
+    const btn = document.getElementById('process-now-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing…'; }
+    try {
+        const res = await fetch('/api/process-incoming', { method: 'POST' });
+        const data = await res.json();
+        if (data.message === 'No pending receipts') {
+            toast('No pending receipts to process', 'info');
+        } else if (data.success) {
+            toast(data.jobberExpenseId ? 'Receipt processed and posted to Jobber!' : 'Receipt processed (check history)', 'success', 5000);
+            await loadGmailReceipts();
+        } else {
+            toast('Processing failed: ' + (data.error || 'Unknown error'), 'error', 6000);
+            await loadGmailReceipts();
+        }
+    } catch (e) {
+        toast('Could not reach server', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Process Now'; }
+    }
 }
 
 /* ── Settings View ── */
