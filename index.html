@@ -436,9 +436,16 @@ async function autoProcessPending() {
         const badge = document.getElementById('gmail-badge');
         if (badge) { badge.style.display = ''; badge.textContent = data.length; }
 
-        // Deduplicate by file_url — keep earliest occurrence only
+        // Deduplicate by file_url — keep earliest occurrence only, mark duplicates done
         const seenUrls = new Set();
-        const unique = data.filter(r => { if (seenUrls.has(r.file_url)) return false; seenUrls.add(r.file_url); return true; });
+        const unique = [], dupes = [];
+        for (const r of data) {
+            if (seenUrls.has(r.file_url)) dupes.push(r);
+            else { seenUrls.add(r.file_url); unique.push(r); }
+        }
+        for (const d of dupes) {
+            await sb.from('incoming_receipts').update({ status: 'done', error: 'Duplicate file — skipped', processed_at: new Date().toISOString() }).eq('id', d.id);
+        }
 
         let posted = 0, failed = 0;
         for (const row of unique) {
@@ -689,7 +696,7 @@ function uploadHTML() {
                         <td>${escHtml(r.vendor || '—')}</td>
                         <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
                         <td style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</td>
-                        <td><span class="badge badge-${r.status === 'jobber' ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${r.status === 'jobber' ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
+                        <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
                     </tr>`).join('')}
                     </tbody>
                 </table>
@@ -1123,7 +1130,14 @@ async function triggerProcessNow() {
 }
 
 async function processGmailRow(row) {
-    await sb.from('incoming_receipts').update({ status: 'processing' }).eq('id', row.id);
+    // Atomic claim: only mark processing if still pending — prevents race with server-side cron
+    const { data: claimed } = await sb
+        .from('incoming_receipts')
+        .update({ status: 'processing' })
+        .eq('id', row.id)
+        .eq('status', 'pending')
+        .select('id');
+    if (!claimed || claimed.length === 0) return { success: false, error: 'Already claimed by another process' };
 
     const failRow = async (msg) => {
         await sb.from('incoming_receipts').update({
