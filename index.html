@@ -969,9 +969,10 @@ function gmailHTML() {
                         <th>Received</th>
                         <th>Status</th>
                         <th>Error</th>
+                        <th></th>
                     </tr></thead>
                     <tbody id="gmail-tbody">
-                        <tr><td colspan="6" style="text-align:center;color:#9CA3AF;padding:32px;">Loading…</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:#9CA3AF;padding:32px;">Loading…</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1019,7 +1020,7 @@ async function loadGmailReceipts() {
     `;
 
     if (!gmailRows.length) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#9CA3AF;padding:32px;">No emailed receipts yet</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#9CA3AF;padding:32px;">No emailed receipts yet</td></tr>`;
         return;
     }
 
@@ -1031,34 +1032,116 @@ async function loadGmailReceipts() {
     };
 
     tbody.innerHTML = gmailRows.map(r => `<tr>
-        <td style="font-size:12px;color:#374151;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_from||'').replace(/"/g,'&quot;')}">${r.email_from || '—'}</td>
-        <td style="font-size:12px;color:#374151;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_subject||'').replace(/"/g,'&quot;')}">${r.email_subject || '—'}</td>
+        <td style="font-size:12px;color:#374151;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_from||'').replace(/"/g,'&quot;')}">${r.email_from || '—'}</td>
+        <td style="font-size:12px;color:#374151;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_subject||'').replace(/"/g,'&quot;')}">${r.email_subject || '—'}</td>
         <td style="font-size:12px;font-family:monospace;color:#6B7280;">${r.file_name || '—'}</td>
         <td style="font-size:11.5px;color:#6B7280;white-space:nowrap;">${r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
         <td>${statusBadge(r.status)}</td>
-        <td style="font-size:11.5px;color:#DC2626;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.error||'').replace(/"/g,'&quot;')}">${r.error || ''}</td>
+        <td style="font-size:11.5px;color:#DC2626;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.error||'').replace(/"/g,'&quot;')}">${r.error || ''}</td>
+        <td>${r.status === 'pending' || r.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="processSingleRow('${r.id}')"><i class="fa-solid fa-play" style="font-size:10px;"></i> Run</button>` : ''}</td>
     </tr>`).join('');
 }
 
+async function processSingleRow(id) {
+    const row = gmailRows.find(r => r.id === id);
+    if (!row) return;
+    toast('Processing receipt…', 'info');
+    const result = await processGmailRow(row);
+    if (result.success) toast('Receipt processed and posted to Jobber!', 'success', 5000);
+    else toast('Failed: ' + (result.error || 'Unknown error'), 'error', 6000);
+    await loadGmailReceipts();
+}
+
 async function triggerProcessNow() {
+    const pending = gmailRows.filter(r => r.status === 'pending');
+    if (!pending.length) { toast('No pending receipts to process', 'info'); return; }
     const btn = document.getElementById('process-now-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing…'; }
+    let ok = 0, fail = 0;
+    for (const row of pending) {
+        const result = await processGmailRow(row);
+        if (result.success) ok++; else fail++;
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Process Now'; }
+    toast(`Done — ${ok} posted to Jobber${fail ? `, ${fail} failed` : ''}`, ok > 0 ? 'success' : 'error', 6000);
+    await loadGmailReceipts();
+}
+
+async function processGmailRow(row) {
+    // Mark as processing in DB
+    await sb.from('incoming_receipts').update({ status: 'processing' }).eq('id', row.id);
+
     try {
-        const res = await fetch('/api/process-incoming', { method: 'POST' });
-        const data = await res.json();
-        if (data.message === 'No pending receipts') {
-            toast('No pending receipts to process', 'info');
-        } else if (data.success) {
-            toast(data.jobberExpenseId ? 'Receipt processed and posted to Jobber!' : 'Receipt processed (check history)', 'success', 5000);
-            await loadGmailReceipts();
-        } else {
-            toast('Processing failed: ' + (data.error || 'Unknown error'), 'error', 6000);
-            await loadGmailReceipts();
+        // 1. Extract via Gemini (reuses /api/extract-url which is already working)
+        const extractRes = await authedFetch('/api/extract-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileUrl: row.file_url, mimeType: 'application/pdf', originalName: row.file_name })
+        });
+        const extractData = await extractRes.json();
+        if (!extractData.success) throw new Error(extractData.error || 'Extraction failed');
+
+        const { vendor, invoiceNo, date, total, jobNo, items } = extractData.data;
+
+        // 2. Auto-post to Jobber if job number found
+        let jobberExpenseId = null;
+        let jobberError = null;
+
+        if (jobNo) {
+            try {
+                const expRes = await authedFetch('/api/create-expense', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vendor, invoiceNo, date, total, jobNo, receiptBlobUrl: row.file_url })
+                });
+                const expData = await expRes.json();
+                if (expData.success) {
+                    jobberExpenseId = expData.expenseId;
+                } else {
+                    jobberError = expData.error || 'Jobber post failed';
+                }
+            } catch (e) {
+                jobberError = e.message;
+            }
         }
-    } catch (e) {
-        toast('Could not reach server', 'error');
-    } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Process Now'; }
+
+        // 3. Save to receipts history (same as manual flow)
+        const rec = {
+            id: crypto.randomUUID(),
+            vendor: vendor || null,
+            date: date || null,
+            amount: parseFloat(total) || 0,
+            total: total ? String(total) : null,
+            jobNo: jobNo || null,
+            invoiceNo: invoiceNo || null,
+            items: items || [],
+            receiptBlobUrl: row.file_url || null,
+            jobberExpenseId: jobberExpenseId || null,
+            status: jobberExpenseId ? 'posted' : (jobNo ? 'error' : 'saved'),
+            error: jobberError || null,
+            savedAt: new Date().toISOString(),
+            category: null
+        };
+        state.history.unshift(rec);
+        updateBadge();
+        await upsertReceipt(rec);
+
+        // 4. Mark incoming row done
+        await sb.from('incoming_receipts').update({
+            status: 'done',
+            error: jobberError || null,
+            processed_at: new Date().toISOString()
+        }).eq('id', row.id);
+
+        return { success: true };
+
+    } catch (err) {
+        await sb.from('incoming_receipts').update({
+            status: 'failed',
+            error: err.message,
+            processed_at: new Date().toISOString()
+        }).eq('id', row.id);
+        return { success: false, error: err.message };
     }
 }
 
