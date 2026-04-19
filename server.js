@@ -552,7 +552,7 @@ function extractFieldsFromLlama(content) {
   // Monetary values must have a decimal point — integers alone are line numbers or catalog codes
   const parseMonetary = (cell) => {
     const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
-    if (!/\.\d{1,2}$/.test(s)) return null;
+    if (!/\.\d+$/.test(s)) return null;  // must have at least one decimal digit (handles 2 or 4 dp)
     const n = parseFloat(s);
     return (!isNaN(n) && n > 0) ? n : null;
   };
