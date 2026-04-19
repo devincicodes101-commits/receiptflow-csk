@@ -333,6 +333,9 @@ function extractFieldsFromLlama(content) {
           const text = inner
             .replace(/<br\s*\/?>/gi, ' ')
             .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&#160;/g, ' ')
+            .replace(/\u00A0/g, ' ')
             .replace(/&amp;/g, '&')
             .replace(/&lt;/g, '<')
             .replace(/&gt;/g, '>')
