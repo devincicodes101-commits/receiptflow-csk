@@ -608,12 +608,14 @@ function extractFieldsFromLlama(content) {
       if (!desc && lastDesc) desc = lastDesc;
       if (desc) lastDesc = desc;
 
-      // Qty: integer up to 4 digits (negative allowed for credit/return invoices)
+      // Qty: integer up to 4 digits; handle both -1 and 1- (trailing minus = accounting negative)
       let qty = null;
       for (let c = priceCells.length - 1; c >= 1; c--) {
         const cell = (priceCells[c] || '').trim();
-        if (/^-?\d{1,4}$/.test(cell)) {
-          const n = parseInt(cell, 10);
+        if (/^-?\d{1,4}-?$/.test(cell)) {
+          const digits = cell.replace(/^-|-$/g, '');
+          const sign = cell.startsWith('-') || cell.endsWith('-') ? -1 : 1;
+          const n = parseInt(digits, 10) * sign;
           if (n !== 0 && n !== Math.round(lineTotal)) { qty = n; break; }
         }
       }
