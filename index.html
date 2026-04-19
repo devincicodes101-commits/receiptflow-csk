@@ -39,26 +39,26 @@
 
         /* ── Sidebar ── */
         .sidebar { background: linear-gradient(180deg, var(--sidebar-bg-from) 0%, var(--sidebar-bg-to) 100%); width: 232px; min-width: 232px; display: flex; flex-direction: column; }
-        .nav-section-label { padding: 0 14px 5px; font-size: 9.5px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.12em; }
-        .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; margin: 1px 8px; border-radius: 7px; color: #64748B; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.13s ease; border-left: 2px solid transparent; user-select: none; }
-        .nav-item:hover { background: var(--sidebar-hover); color: #CBD5E1; }
-        .nav-item.active { background: rgba(249,115,22,0.12); color: #FB923C; border-left-color: #F97316; font-weight: 600; }
+        .nav-section-label { padding: 0 16px 6px; font-size: 11px; font-weight: 500; color: #475569; text-transform: uppercase; letter-spacing: 0.1em; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 16px; margin: 1px 8px; border-radius: 8px; color: #64748B; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; border-left: 2px solid transparent; user-select: none; }
+        .nav-item:hover { background: rgba(255,255,255,0.05); color: #CBD5E1; }
+        .nav-item.active { background: rgba(249,115,22,0.1); color: #FB923C; border-left-color: #F97316; font-weight: 600; }
         .nav-item.active i { color: #FB923C; }
-        .nav-item i { width: 18px; text-align: center; font-size: 14px; color: #475569; transition: color 0.13s; }
+        .nav-item i { width: 18px; text-align: center; font-size: 14px; color: #475569; transition: color 0.2s; }
         .nav-item:hover i { color: #94A3B8; }
         .nav-badge { margin-left: auto; background: #E11D48; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; line-height: 1.6; }
 
         /* ── Upload zone ── */
-        .upload-zone { border: 2px dashed #E2E8F0; border-radius: 16px; padding: 56px 32px; text-align: center; cursor: pointer; transition: all 0.22s ease; background: linear-gradient(135deg, rgba(255,247,237,0.5) 0%, #ffffff 50%, rgba(255,247,237,0.3) 100%); }
-        .upload-zone:hover { border-color: #FDBA74; background: linear-gradient(135deg, rgba(255,247,237,0.9) 0%, rgba(255,253,250,0.95) 50%, rgba(255,247,237,0.7) 100%); }
-        .upload-zone.dragover { border-color: var(--brand); background: rgba(255,247,237,0.8); transform: scale(1.01); }
+        .upload-zone { border: 2px dashed #D1D5DB; border-radius: 16px; padding: 48px 32px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: rgba(248,250,252,0.6); }
+        .upload-zone:hover { border-color: #FB923C; background: rgba(255,247,237,0.5); }
+        .upload-zone.dragover { border-color: var(--brand); background: rgba(255,247,237,0.65); transform: scale(1.005); }
 
         /* ── Badges ── */
         .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.01em; }
-        .badge-posted { background: #ECFDF5; color: #047857; box-shadow: 0 0 0 1px rgba(5,150,105,0.2); }
-        .badge-jobber { background: #EFF6FF; color: #1D4ED8; box-shadow: 0 0 0 1px rgba(29,78,216,0.18); }
-        .badge-error { background: #FFF1F2; color: #BE123C; box-shadow: 0 0 0 1px rgba(225,29,72,0.18); }
-        .badge-processing { background: #FFFBEB; color: #92400E; box-shadow: 0 0 0 1px rgba(217,119,6,0.2); }
+        .badge-posted { background: #ECFDF5; color: #047857; box-shadow: 0 0 0 1px rgba(5,150,105,0.18); }
+        .badge-jobber { background: #EFF6FF; color: #1D4ED8; box-shadow: 0 0 0 1px rgba(29,78,216,0.15); }
+        .badge-error { background: #FFF1F2; color: #BE123C; box-shadow: 0 0 0 1px rgba(225,29,72,0.15); }
+        .badge-processing { background: #FFFBEB; color: #92400E; box-shadow: 0 0 0 1px rgba(217,119,6,0.18); }
 
         /* ── Progress ── */
         .progress-track { background: #E2E8F0; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 4px; }
@@ -68,10 +68,10 @@
 
         /* ── Data table ── */
         .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .data-table th { text-align: left; padding: 9px 14px; font-weight: 700; color: #94A3B8; border-bottom: 1px solid #F1F5F9; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; background: #FAFAFA; }
-        .data-table td { padding: 12px 14px; border-bottom: 1px solid #F8FAFC; vertical-align: middle; color: #374151; }
+        .data-table th { text-align: left; padding: 10px 16px; font-weight: 600; color: #94A3B8; border-bottom: 1px solid #E2E8F0; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; background: #F8FAFC; }
+        .data-table td { padding: 13px 16px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; color: #374151; }
         .data-table tbody tr:last-child td { border-bottom: none; }
-        .data-table tbody tr:hover td { background: #FAFAFA; }
+        .data-table tbody tr:hover td { background: rgba(248,250,252,0.7); }
 
         /* ── Toasts ── */
         .toast { padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 9px; animation: slideIn 0.25s ease; max-width: 400px; }
@@ -118,20 +118,16 @@
         .inline-input { padding: 4px 8px; border: 1px solid var(--brand); border-radius: 4px; font-size: 13px; font-family: inherit; width: 130px; outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,0.1); }
 
         /* ── Stat cards ── */
-        .stat-card { background: #fff; border: 1px solid rgba(226,232,240,0.7); border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02); transition: box-shadow 0.18s ease, transform 0.18s ease; border-top-width: 2px; }
-        .stat-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.04); transform: translateY(-1px); }
-        .stat-card-blue { border-top-color: #3B82F6; }
-        .stat-card-emerald { border-top-color: #10B981; }
-        .stat-card-rose { border-top-color: #F43F5E; }
-        .stat-card-orange { border-top-color: #F97316; }
-        .stat-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+        .stat-card { background: #fff; border: 1px solid rgba(226,232,240,0.8); border-radius: 16px; padding: 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06); transition: all 0.2s ease; }
+        .stat-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04); transform: translateY(-1px); }
+        .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; }
         .stat-icon-blue { background: #EFF6FF; color: #3B82F6; }
         .stat-icon-emerald { background: #ECFDF5; color: #059669; }
         .stat-icon-rose { background: #FFF1F2; color: #E11D48; }
         .stat-icon-orange { background: #FFF7ED; color: #F97316; }
         .stat-body { min-width: 0; }
-        .stat-value { font-size: 24px; font-weight: 700; color: #111827; line-height: 1.15; letter-spacing: -0.02em; }
-        .stat-label { font-size: 10.5px; color: #94A3B8; font-weight: 600; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.07em; }
+        .stat-value { font-size: 26px; font-weight: 600; color: #0F172A; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+        .stat-label { font-size: 11px; color: #94A3B8; font-weight: 500; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
 
         .fade-in { animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -154,7 +150,7 @@
         .login-card { background: #fff; border-radius: 14px; padding: 36px 32px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
 
         /* Responsive layout helpers */
-        .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 22px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 24px; }
         .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
         .review-layout { display: flex; gap: 22px; max-width: 980px; }
         .review-sidebar { width: 360px; flex-shrink: 0; }
@@ -273,10 +269,15 @@
                 <i class="fa-solid fa-gear"></i>Settings
             </div>
         </nav>
-        <div style="padding:12px 14px;border-top:1px solid rgba(255,255,255,0.06);">
-            <div id="sidebar-user" style="font-size:11px;color:#334155;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
-            <button onclick="doLogout()" style="display:flex;align-items:center;gap:8px;background:none;border:none;color:#475569;font-size:12px;cursor:pointer;font-family:inherit;padding:0;transition:color 0.12s;" onmouseover="this.style.color='#94A3B8'" onmouseout="this.style.color='#475569'">
-                <i class="fa-solid fa-arrow-right-from-bracket" style="font-size:11px;"></i>Sign Out
+        <div style="padding:14px 14px 14px;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">
+                <div style="width:28px;height:28px;background:rgba(249,115,22,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fa-solid fa-user" style="font-size:11px;color:#FB923C;"></i>
+                </div>
+                <div id="sidebar-user" style="font-size:12px;color:#94A3B8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"></div>
+            </div>
+            <button onclick="doLogout()" style="display:flex;align-items:center;gap:7px;background:none;border:none;color:#475569;font-size:12px;cursor:pointer;font-family:inherit;padding:0;transition:color 0.2s;" onmouseover="this.style.color='#E2E8F0'" onmouseout="this.style.color='#475569'">
+                <i class="fa-solid fa-arrow-right-from-bracket" style="font-size:10px;"></i>Sign Out
             </button>
         </div>
     </aside>
@@ -693,70 +694,70 @@ function uploadHTML() {
 
         <!-- Stat cards -->
         <div class="stats-grid">
-            <div class="stat-card stat-card-blue">
+            <div class="stat-card">
                 <div class="stat-icon stat-icon-blue"><i class="fa-solid fa-file-lines"></i></div>
                 <div class="stat-body">
                     <div class="stat-value">${s.total}</div>
-                    <div class="stat-label">Total Processed</div>
+                    <div class="stat-label">Processed</div>
                 </div>
             </div>
-            <div class="stat-card stat-card-emerald">
+            <div class="stat-card">
                 <div class="stat-icon stat-icon-emerald"><i class="fa-solid fa-circle-check"></i></div>
                 <div class="stat-body">
                     <div class="stat-value">${s.posted}</div>
-                    <div class="stat-label">Successfully Parsed</div>
+                    <div class="stat-label">Parsed</div>
                 </div>
             </div>
-            <div class="stat-card stat-card-rose">
+            <div class="stat-card">
                 <div class="stat-icon stat-icon-rose"><i class="fa-solid fa-triangle-exclamation"></i></div>
                 <div class="stat-body">
                     <div class="stat-value">${s.errors}</div>
-                    <div class="stat-label">Errors / Flagged</div>
+                    <div class="stat-label">Flagged</div>
                 </div>
             </div>
-            <div class="stat-card stat-card-orange">
+            <div class="stat-card">
                 <div class="stat-icon stat-icon-orange"><i class="fa-solid fa-dollar-sign"></i></div>
                 <div class="stat-body">
-                    <div class="stat-value" style="color:#EA580C;">${fmt(s.amount)}</div>
-                    <div class="stat-label">Total Extracted</div>
+                    <div class="stat-value">${fmt(s.amount)}</div>
+                    <div class="stat-label">Extracted</div>
                 </div>
             </div>
         </div>
 
         <!-- Upload zone -->
         <div id="drop-zone" class="upload-zone">
-            <div style="margin-bottom:18px;">
-                <div style="width:64px;height:64px;background:linear-gradient(135deg,#F97316,#EA580C);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto;box-shadow:0 8px 20px rgba(249,115,22,0.3);">
-                    <i class="fa-solid fa-cloud-arrow-up" style="font-size:26px;color:#fff;"></i>
+            <div style="margin-bottom:16px;">
+                <div style="width:52px;height:52px;background:#F97316;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto;box-shadow:0 4px 14px rgba(249,115,22,0.25);">
+                    <i class="fa-solid fa-cloud-arrow-up" style="font-size:22px;color:#fff;"></i>
                 </div>
             </div>
-            <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:6px;">Drop receipts here</div>
-            <div style="font-size:13px;color:#94A3B8;margin-bottom:22px;">or click to browse — up to 3 files at once</div>
+            <div style="font-size:15px;font-weight:600;color:#0F172A;margin-bottom:4px;">Drop receipts here</div>
+            <div style="font-size:13px;color:#64748B;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
             <button class="btn btn-primary" style="padding:8px 20px;" onclick="event.stopPropagation();document.getElementById('file-input').click()">
                 <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose Files
             </button>
-            <div style="margin-top:18px;font-size:11px;color:#CBD5E1;letter-spacing:0.03em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; Up to 3 files</div>
+            <div style="margin-top:16px;font-size:11px;color:#94A3B8;letter-spacing:0.02em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; Up to 3 files</div>
         </div>
 
-        <div style="margin-top:10px;display:flex;align-items:center;gap:6px;">
-            <i class="fa-solid fa-robot" style="color:#CBD5E1;font-size:11px;"></i>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:5px;">
+            <i class="fa-solid fa-robot" style="color:#CBD5E1;font-size:10px;"></i>
             <span style="font-size:11px;color:#CBD5E1;">Powered by Gemini Vision</span>
         </div>
 
         ${hasHistory ? `
         <div style="margin-top:28px;">
-            <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Recent Uploads</div>
-            <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            <div style="font-size:13px;font-weight:600;color:#0F172A;margin-bottom:12px;">Recent Uploads</div>
+            <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
                 <table class="data-table">
                     <thead><tr><th>Receipt</th><th>Vendor</th><th>Amount</th><th>Job #</th><th>Status</th></tr></thead>
                     <tbody>
                     ${state.history.slice(0, 5).map(r => {
                         const shortId = (r.id || '').length > 18 ? (r.id || '').slice(0, 18) + '…' : (r.id || '');
                         return `<tr>
-                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:11.5px;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
-                        <td style="font-weight:500;">${escHtml(r.vendor || '—')}</td>
-                        <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
-                        <td style="font-family:monospace;font-size:11.5px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</td>
+                        <td style="color:#64748B;font-family:monospace;font-size:11.5px;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
+                        <td style="font-weight:500;color:#0F172A;">${escHtml(r.vendor || '—')}</td>
+                        <td style="font-weight:600;color:#0F172A;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
+                        <td style="font-family:monospace;font-size:11.5px;color:${r.jobNo ? '#374151' : '#E11D48'};">${escHtml(r.jobNo || 'Not found')}</td>
                         <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
                     </tr>`;}).join('')}
                     </tbody>
@@ -971,7 +972,7 @@ function reviewHTML() {
 function historyHTML() {
     return `<div class="fade-in">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-            <div style="font-size:15px;font-weight:700;color:#111827;">All Receipts <span style="font-size:13px;font-weight:500;color:#6B7280;margin-left:6px;">${state.history.length} total</span></div>
+            <div style="font-size:15px;font-weight:600;color:#0F172A;">All Receipts <span style="font-size:13px;font-weight:400;color:#94A3B8;margin-left:6px;">${state.history.length} total</span></div>
             <div style="display:flex;gap:8px;">
                 <input class="form-input" placeholder="Search vendor or invoice..." style="width:220px;font-size:12.5px;" id="history-search">
                 <select class="form-input" style="width:130px;font-size:12.5px;" id="history-filter">
@@ -983,12 +984,12 @@ function historyHTML() {
             </div>
         </div>
         ${state.history.length === 0
-            ? `<div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:12px;text-align:center;padding:60px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-                <i class="fa-solid fa-inbox" style="font-size:36px;color:#CBD5E1;margin-bottom:12px;display:block;"></i>
+            ? `<div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;text-align:center;padding:60px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
+                <i class="fa-solid fa-inbox" style="font-size:32px;color:#CBD5E1;margin-bottom:10px;display:block;"></i>
                 <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px;">No receipts yet</div>
                 <div style="font-size:13px;color:#94A3B8;">Upload a receipt to get started</div>
                </div>`
-            : `<div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            : `<div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
                 <div class="table-wrap"><table class="data-table">
                     <thead>
                         <tr>
