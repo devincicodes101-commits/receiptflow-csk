@@ -608,11 +608,11 @@ function extractFieldsFromLlama(content) {
       if (!desc && lastDesc) desc = lastDesc;
       if (desc) lastDesc = desc;
 
-      // Qty: small integer (1–9999) that is not a catalog code (4+ digits are catalog codes)
+      // Qty: integer up to 4 digits — UPC/catalog codes are 12+ digits so this is safe
       let qty = null;
       for (let c = priceCells.length - 1; c >= 1; c--) {
         const cell = (priceCells[c] || '').trim();
-        if (/^\d{1,3}$/.test(cell)) {
+        if (/^\d{1,4}$/.test(cell)) {
           const n = parseInt(cell, 10);
           if (n > 0 && n !== Math.round(lineTotal)) { qty = n; break; }
         }
