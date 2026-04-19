@@ -549,63 +549,72 @@ function extractFieldsFromLlama(content) {
   let itemsSum = 0;
   let lastDesc = '';
 
-  const parseNum = (cell) => {
+  // Monetary values must have a decimal point — integers alone are line numbers or catalog codes
+  const parseMonetary = (cell) => {
     const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
+    if (!/\.\d{1,2}$/.test(s)) return null;
     const n = parseFloat(s);
     return (!isNaN(n) && n > 0) ? n : null;
   };
+
+  // Detect line-number cell: small plain integer (≤ 999), no decimal
+  const isLineNoCell = (cell) => /^\d{1,3}$/.test((cell || '').trim()) && parseInt(cell, 10) <= 999;
 
   for (const { table: itemsTable, headerRow: itemsHeaderRow } of itemsTables) {
     for (let ri = itemsHeaderRow + 1; ri < itemsTable.length; ri++) {
       const row = itemsTable[ri];
 
-      const nums = row.map(parseNum).filter(n => n !== null);
+      // Strip leading LINE column if present so it never pollutes price parsing
+      const firstCell = (row[0] || '').trim();
+      const hasLineCol = isLineNoCell(firstCell);
+      const lineNo = hasLineCol ? firstCell : '';
+      const priceCells = hasLineCol ? row.slice(1) : row;
+
+      const nums = priceCells.map(parseMonetary).filter(n => n !== null);
 
       if (nums.length === 0) {
-        for (const cell of row) {
+        for (const cell of priceCells) {
           const cleaned = cell.replace(/\*\*\d+\*\*\s*/g, '').replace(/\s+\d+$/, '').trim();
-          const isHeader = /^(LINE|QTY|PRODUCT|DESCRIPTION|PRICE|TOTAL|AMOUNT|UNIT|U\/M|DISCOUNT|SHIPPED|ORDERED|BACKORDERED|UPC|LIST|REFERENCE|REP|C\.O\.D|TAKEN BY|ORIGINAL INVOICE|SEE NOTES)/i.test(cleaned);
+          const isHeader = /^(LINE|QTY|PRODUCT|DESCRIPTION|PRICE|TOTAL|AMOUNT|UNIT|U\/M|DISCOUNT|SHIPPED|ORDERED|BACKORDERED|UPC|LIST|REFERENCE|REP|C\.O\.D|TAKEN BY|ORIGINAL INVOICE|SEE NOTES|SKU|CATALOG|CODE)/i.test(cleaned);
           if (!isHeader && cleaned.length > 4 && cleaned.length > lastDesc.length) lastDesc = cleaned;
         }
         continue;
       }
 
-      const isFee = row.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
+      const isFee = priceCells.some(c => /\bfee\b|surcharge|eco|levy/i.test(c));
       if (isFee) {
         const feeTotal = nums[nums.length - 1];
-        const feeLabel = row.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
-        items.push({ lineNo: '', desc: feeLabel, qty: null, unit: null, total: feeTotal });
+        const feeLabel = priceCells.find(c => /\bfee\b|surcharge|eco|levy/i.test(c)) || 'Fee';
+        items.push({ lineNo, desc: feeLabel, qty: null, unit: null, total: feeTotal });
         itemsSum += feeTotal;
         continue;
       }
 
       const lineTotal = nums[nums.length - 1];
       const netPrice = nums.length >= 2 ? nums[nums.length - 2] : null;
-      const lineNo = row[0] || '';
 
       let desc = '';
-      for (const cell of row) {
+      for (const cell of priceCells) {
         const cleaned = cell.replace(/\s+\d+$/, '').replace(/\s*[-+]\s*$/, '').trim();
-        const isNumeric =
-          /^\$?[\d,.]+$/.test(cleaned) ||
+        const isNumericOrCode =
+          /^\$?[\d,.]+$/.test(cleaned) ||   // number or price
           cleaned.length === 0 ||
-          /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN)$/i.test(cleaned);
+          /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN|MT)$/i.test(cleaned) || // UoM
+          /^\d{4,}$/.test(cleaned);           // catalog code (4+ digit integer)
 
-        if (!isNumeric && cleaned.length > desc.length) desc = cleaned;
+        if (!isNumericOrCode && cleaned.length > desc.length) desc = cleaned;
       }
 
       if (!desc && lastDesc) desc = lastDesc;
       if (desc) lastDesc = desc;
 
+      // Qty: small integer (1–9999) that is not a catalog code (4+ digits are catalog codes)
       let qty = null;
-      for (let c = row.length - 1; c >= 1; c--) {
-        const m = (row[c] || '').match(/(\d{1,4})$/);
-        if (m) {
-          const n = parseInt(m[1], 10);
-          if (n > 0 && n < 10000 && n !== Math.round(lineTotal)) {
-            qty = n;
-            break;
-          }
+      for (let c = priceCells.length - 1; c >= 1; c--) {
+        const cell = (priceCells[c] || '').trim();
+        if (/^\d{1,3}$/.test(cell)) {
+          const n = parseInt(cell, 10);
+          if (n > 0 && n !== Math.round(lineTotal)) { qty = n; break; }
         }
       }
 
@@ -668,7 +677,7 @@ async function getGeminiClient() {
 async function parseWithGemini(fileBuffer, mimeType) {
   const ai = await getGeminiClient();
 
-  const prompt = `You are a receipt and invoice parser. Extract ALL content from this document.
+  const prompt = `You are a receipt and invoice parser. Extract ALL content from this document exactly as printed.
 
 Formatting rules (follow exactly):
 - Output the vendor/company name as a # H1 heading (e.g. "# GESCAN")
@@ -676,7 +685,27 @@ Formatting rules (follow exactly):
 - Preserve every value exactly as printed — do not round numbers, reformat dates, or paraphrase
 - Include ALL rows: header rows, sub-header rows, data rows, totals rows
 - Output plain text (addresses, notes) as-is between tables
-- Do not add commentary, explanations, or markdown code fences`;
+- Do not add commentary, explanations, or markdown code fences
+
+CRITICAL rules — never break these:
+
+LINE NUMBERS:
+- The leftmost "LINE" or "LINE #" column contains sequential row identifiers (1, 2, 3, 9, 15…). These are NOT prices, NOT quantities, NOT totals.
+- Always place line number integers in the LINE column cell only. Never put them in a PRICE, UNIT, UNIT PRICE, or TOTAL cell.
+- A bare integer like "2" or "15" with no decimal point is always a line number or a quantity — it is NEVER a monetary amount.
+
+PRICES AND TOTALS:
+- Monetary values (unit price, extended price, total) always contain a decimal point with exactly 2 digits (e.g. $8.99, $1,348.47, $274.37).
+- If a cell has no decimal point it is not a price. Do not invent or add decimal points.
+- Never place a line number or a catalog code in a price column.
+
+QUANTITIES AND CATALOG CODES:
+- The QTY or QUANTITY column contains the number of units ordered or shipped (e.g. 47, 82, 5, 76). These are typically under 10,000.
+- Product/catalog/SKU codes (e.g. 7150, 3520, 9024, 1190) are product identifiers. Place them in a SKU, PRODUCT CODE, or CATALOG # column — never in the QTY column or any price column.
+- A dash "—" or blank means the value is absent for that column. Do not substitute a line number or catalog code for a missing price.
+
+UNIT OF MEASURE:
+- Unit of measure values (MT, EA, EACH, PC, FT, M, LB) belong in the U/M or UNIT column, not as a separate description row.`;
 
   if (mimeType === 'application/pdf') {
     // Upload via Files API so Gemini processes every page of the PDF
