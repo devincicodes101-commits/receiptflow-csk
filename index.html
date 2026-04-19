@@ -46,6 +46,10 @@
         .badge-jobber { background: #EEF2FF; color: #4F46E5; }
         .badge-error { background: #FEF2F2; color: #DC2626; }
         .badge-processing { background: #FFFBEB; color: #D97706; }
+        .progress-track { background:#E5E7EB; border-radius:6px; height:10px; overflow:hidden; margin-top:4px; }
+        .progress-fill { height:100%; border-radius:6px; background:linear-gradient(90deg,#4F46E5,#7C3AED); transition:width 0.6s ease; }
+        @keyframes progress-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+        .progress-fill.active { animation: progress-pulse 1.5s infinite; }
 
         .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .data-table th { text-align: left; padding: 9px 12px; font-weight: 600; color: #6B7280; border-bottom: 1px solid #E5E7EB; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; background: #F9FAFB; }
@@ -1012,7 +1016,15 @@ function gmailHTML() {
                 </button>
             </div>
         </div>
-        <div id="gmail-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;"></div>
+        <div id="gmail-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;"></div>
+        <div id="gmail-progress-wrap" style="display:none;background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:12px;font-weight:600;color:#374151;"><i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;color:#4F46E5;"></i>Processing receipts…</span>
+                <span id="gmail-progress-label" style="font-size:12px;color:#6B7280;"></span>
+            </div>
+            <div class="progress-track"><div id="gmail-progress-fill" class="progress-fill active" style="width:0%;"></div></div>
+            <div id="gmail-progress-step" style="font-size:11px;color:#9CA3AF;margin-top:5px;"></div>
+        </div>
         <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
             <div class="table-wrap">
                 <table class="data-table">
@@ -1058,6 +1070,44 @@ async function loadGmailReceipts() {
     const processing = gmailRows.filter(r => r.status === 'processing').length;
     const done = gmailRows.filter(r => r.status === 'done').length;
     const failed = gmailRows.filter(r => r.status === 'failed').length;
+    const total = gmailRows.length;
+
+    // Progress bar
+    const progressWrap = document.getElementById('gmail-progress-wrap');
+    const progressFill = document.getElementById('gmail-progress-fill');
+    const progressLabel = document.getElementById('gmail-progress-label');
+    const progressStep = document.getElementById('gmail-progress-step');
+    const isActive = pending > 0 || processing > 0;
+    if (progressWrap) {
+        progressWrap.style.display = isActive ? '' : 'none';
+        if (isActive && progressFill && progressLabel) {
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            progressFill.style.width = pct + '%';
+            progressLabel.textContent = `${done} of ${total} processed (${pct}%)`;
+            // Show which step the currently-processing row is on
+            const processingRow = gmailRows.find(r => r.status === 'processing');
+            if (progressStep) {
+                if (processingRow) {
+                    const stepLabels = { downloading: 'Downloading file…', extracting: 'Reading with AI…', posting: 'Posting to Jobber…' };
+                    progressStep.textContent = stepLabels[processingRow.step] || `Processing ${processingRow.file_name || 'file'}…`;
+                } else {
+                    progressStep.textContent = `${pending} file${pending !== 1 ? 's' : ''} queued`;
+                }
+            }
+        }
+    }
+
+    // Auto-poll every 6s while anything is active; stop when done
+    if (isActive) {
+        if (!window._gmailProgressPoll) {
+            window._gmailProgressPoll = setInterval(async () => {
+                if (state.view !== 'gmail') return;
+                await loadGmailReceipts();
+            }, 6000);
+        }
+    } else {
+        if (window._gmailProgressPoll) { clearInterval(window._gmailProgressPoll); window._gmailProgressPoll = null; }
+    }
 
     // Update badge
     const badge = document.getElementById('gmail-badge');
@@ -1067,7 +1117,7 @@ async function loadGmailReceipts() {
     }
 
     if (statsEl) statsEl.innerHTML = `
-        <div class="stat-card"><div class="stat-value">${gmailRows.length}</div><div class="stat-label">Total</div></div>
+        <div class="stat-card"><div class="stat-value">${total}</div><div class="stat-label">Total</div></div>
         <div class="stat-card"><div class="stat-value" style="color:#D97706;">${pending + processing}</div><div class="stat-label">Pending</div></div>
         <div class="stat-card"><div class="stat-value" style="color:#059669;">${done}</div><div class="stat-label">Done</div></div>
         <div class="stat-card"><div class="stat-value" style="color:#DC2626;">${failed}</div><div class="stat-label">Failed</div></div>
@@ -1078,10 +1128,16 @@ async function loadGmailReceipts() {
         return;
     }
 
-    const statusBadge = (s) => {
-        if (s === 'done')       return `<span class="badge badge-posted">✓ In Jobber</span>`;
-        if (s === 'failed')     return `<span class="badge badge-error">Failed</span>`;
-        if (s === 'processing') return `<span class="badge badge-processing">Processing…</span>`;
+    const stepLabel = (r) => {
+        if (r.status !== 'processing') return '';
+        const labels = { downloading: ' — downloading', extracting: ' — reading AI', posting: ' — posting' };
+        return labels[r.step] || '';
+    };
+
+    const statusBadge = (r) => {
+        if (r.status === 'done')       return `<span class="badge badge-posted">✓ In Jobber</span>`;
+        if (r.status === 'failed')     return `<span class="badge badge-error">Failed</span>`;
+        if (r.status === 'processing') return `<span class="badge badge-processing"><i class="fa-solid fa-spinner fa-spin" style="font-size:10px;margin-right:4px;"></i>Processing${stepLabel(r)}</span>`;
         return `<span class="badge" style="background:#F3F4F6;color:#6B7280;">Pending</span>`;
     };
 
@@ -1090,7 +1146,7 @@ async function loadGmailReceipts() {
         <td style="font-size:12px;color:#374151;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_subject||'').replace(/"/g,'&quot;')}">${r.email_subject || '—'}</td>
         <td style="font-size:12px;font-family:monospace;color:#6B7280;">${r.file_name || '—'}</td>
         <td style="font-size:11.5px;color:#6B7280;white-space:nowrap;">${r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-        <td>${statusBadge(r.status)}</td>
+        <td>${statusBadge(r)}</td>
         <td style="font-size:11.5px;color:#DC2626;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.error||'').replace(/"/g,'&quot;')}">${r.error || ''}</td>
         <td>${r.status === 'pending' || r.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="processSingleRow('${r.id}')"><i class="fa-solid fa-play" style="font-size:10px;"></i> Run</button>` : ''}</td>
     </tr>`).join('');

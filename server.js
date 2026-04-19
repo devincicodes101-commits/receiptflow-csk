@@ -39,174 +39,138 @@ app.get('/api/config', (req, res) => {
 });
 
 // ── Automated incoming receipt processor — registered BEFORE auth middleware ──
-app.all('/api/process-incoming', async (req, res) => {
-  const secret = (process.env.PROCESS_SECRET || '').trim();
-  if (secret) {
-    const provided = (req.headers['x-process-secret'] || '').trim();
-    if (provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
-  }
+const getMimeType = (name) => {
+  const n = (name || '').toLowerCase();
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  if (n.endsWith('.png')) return 'image/png';
+  if (n.endsWith('.webp')) return 'image/webp';
+  if (n.endsWith('.gif')) return 'image/gif';
+  if (n.match(/\.jpe?g$/)) return 'image/jpeg';
+  return 'application/pdf';
+};
 
-  const sb = await getSupabaseAdmin();
+const extractNodes = (jobsObj) => {
+  if (!jobsObj) return [];
+  if (Array.isArray(jobsObj.nodes) && jobsObj.nodes.length > 0) return jobsObj.nodes;
+  if (Array.isArray(jobsObj.edges) && jobsObj.edges.length > 0) return jobsObj.edges.map(e => e.node).filter(Boolean);
+  if (Array.isArray(jobsObj.nodes)) return jobsObj.nodes;
+  return [];
+};
 
-  const { data: pending, error: selectErr } = await sb
-    .from('incoming_receipts')
-    .select('*')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .single();
-
-  if (selectErr && selectErr.code !== 'PGRST116') {
-    return res.status(500).json({ error: selectErr.message });
-  }
-  if (!pending) return res.json({ success: true, message: 'No pending receipts' });
-
-  const { data: claimed } = await sb
-    .from('incoming_receipts')
-    .update({ status: 'processing' })
-    .eq('id', pending.id)
-    .eq('status', 'pending')
-    .select();
-
-  if (!claimed || claimed.length === 0) {
-    return res.json({ success: true, message: 'Row already claimed by another process' });
-  }
-
-  const incoming = claimed[0];
+async function processOneRow(sb, incoming) {
   const rowId = incoming.id;
-
-  const fail = async (errorMsg) => {
+  const markFailed = async (errorMsg) => {
     console.error(`[process-incoming] ${rowId}: failed — ${errorMsg}`);
     await sb.from('incoming_receipts').update({
-      status: 'failed',
-      error: errorMsg,
-      processed_at: new Date().toISOString()
+      status: 'failed', error: errorMsg, processed_at: new Date().toISOString()
     }).eq('id', rowId);
-    return res.json({ success: false, id: rowId, error: errorMsg });
+    return { id: rowId, success: false, error: errorMsg };
   };
 
   try {
     let fileBuffer, mimeType;
-
-    const getMimeType = (name) => {
-      const n = (name || '').toLowerCase();
-      if (n.endsWith('.pdf')) return 'application/pdf';
-      if (n.endsWith('.png')) return 'image/png';
-      if (n.endsWith('.webp')) return 'image/webp';
-      if (n.endsWith('.gif')) return 'image/gif';
-      if (n.match(/\.jpe?g$/)) return 'image/jpeg';
-      return 'application/pdf';
-    };
-
     if (incoming.file_url) {
       const fileRes = await fetch(incoming.file_url);
-      if (!fileRes.ok) return fail(`Could not download file: HTTP ${fileRes.status}`);
+      if (!fileRes.ok) return markFailed(`Could not download file: HTTP ${fileRes.status}`);
       fileBuffer = Buffer.from(await fileRes.arrayBuffer());
       mimeType = getMimeType(incoming.file_name);
     } else if (incoming.storage_path) {
-      const { data: dlData, error: dlErr } = await sb.storage
-        .from('receipts')
-        .download(incoming.storage_path);
-      if (dlErr) return fail(`Storage download failed: ${dlErr.message}`);
+      const { data: dlData, error: dlErr } = await sb.storage.from('receipts').download(incoming.storage_path);
+      if (dlErr) return markFailed(`Storage download failed: ${dlErr.message}`);
       fileBuffer = Buffer.from(await dlData.arrayBuffer());
       mimeType = getMimeType(incoming.file_name || incoming.storage_path);
     } else {
-      return fail('No file_url or storage_path on incoming record');
+      return markFailed('No file_url or storage_path on incoming record');
     }
 
     console.log(`[process-incoming] ${rowId}: downloaded ${fileBuffer.length} bytes, mime=${mimeType}`);
+    await sb.from('incoming_receipts').update({ step: 'extracting' }).eq('id', rowId);
 
     const geminiOutput = await parseWithGemini(fileBuffer, mimeType);
     const fields = extractFieldsFromLlama(geminiOutput);
     console.log(`[process-incoming] ${rowId}: fields=`, JSON.stringify(fields));
 
+    if (!fields.jobNo) return markFailed('No job number found on receipt');
+
+    await sb.from('incoming_receipts').update({ step: 'posting' }).eq('id', rowId);
+
     let jobberExpenseId = null;
     let jobberError = null;
     const receiptBlobUrl = incoming.file_url || null;
 
-    const extractNodes = (jobsObj) => {
-      if (!jobsObj) return [];
-      if (Array.isArray(jobsObj.nodes) && jobsObj.nodes.length > 0) return jobsObj.nodes;
-      if (Array.isArray(jobsObj.edges) && jobsObj.edges.length > 0) return jobsObj.edges.map(e => e.node).filter(Boolean);
-      if (Array.isArray(jobsObj.nodes)) return jobsObj.nodes;
-      return [];
-    };
+    try {
+      const numStr = String(parseInt(fields.jobNo, 10));
+      let job = null;
 
-    if (fields.jobNo) {
-      try {
-        const numStr = String(parseInt(fields.jobNo, 10));
-        let job = null;
-
-        for (const term of [numStr, `#${numStr}`]) {
-          const result = await jobberGQL(`
-            query FindJob($term: String!) {
-              jobs(first: 100, searchTerm: $term) {
-                nodes { id jobNumber title }
-                edges { node { id jobNumber title } }
-              }
+      for (const term of [numStr, `#${numStr}`]) {
+        const result = await jobberGQL(`
+          query FindJob($term: String!) {
+            jobs(first: 100, searchTerm: $term) {
+              nodes { id jobNumber title }
+              edges { node { id jobNumber title } }
             }
-          `, { term });
-          if (!result.errors?.length) {
-            job = extractNodes(result.data?.jobs).find(j => String(j.jobNumber) === numStr);
-            if (job) break;
           }
+        `, { term });
+        if (!result.errors?.length) {
+          job = extractNodes(result.data?.jobs).find(j => String(j.jobNumber) === numStr);
+          if (job) break;
         }
-
-        if (!job) {
-          let cursor = null;
-          for (let page = 0; page < 20 && !job; page++) {
-            const query = cursor
-              ? `query PageJobs($cursor: String!) { jobs(first: 100, after: $cursor) { nodes { id jobNumber title } edges { node { id jobNumber title } } pageInfo { hasNextPage endCursor } } }`
-              : `query PageJobs { jobs(first: 100) { nodes { id jobNumber title } edges { node { id jobNumber title } } pageInfo { hasNextPage endCursor } } }`;
-            const result = await jobberGQL(query, cursor ? { cursor } : {});
-            if (result.errors?.length) break;
-            const jobsObj = result.data?.jobs;
-            job = extractNodes(jobsObj).find(j => String(j.jobNumber) === numStr);
-            if (job || !jobsObj?.pageInfo?.hasNextPage) break;
-            cursor = jobsObj.pageInfo.endCursor;
-          }
-        }
-
-        if (job) {
-          const titleParts = [fields.vendor, fields.invoiceNo ? `Invoice #${fields.invoiceNo}` : null].filter(Boolean);
-          const expInput = {
-            linkedJobId: job.id,
-            title: titleParts.length ? titleParts.join(' — ') : 'Expense',
-            total: parseFloat(fields.total) || 0,
-            date: (fields.date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
-          };
-          if (fields.invoiceNo) expInput.description = `Invoice #${fields.invoiceNo}`;
-          if (receiptBlobUrl) expInput.receiptUrl = receiptBlobUrl;
-
-          const expResult = await jobberGQL(`
-            mutation CreateExpense($input: ExpenseCreateInput!) {
-              expenseCreate(input: $input) {
-                expense { id title total }
-                userErrors { message path }
-              }
-            }
-          `, { input: expInput });
-
-          const expense = expResult.data?.expenseCreate?.expense;
-          const userErrors = expResult.data?.expenseCreate?.userErrors;
-          if (expense?.id) {
-            jobberExpenseId = expense.id;
-            console.log(`[process-incoming] ${rowId}: Jobber expense created: ${jobberExpenseId}`);
-          } else {
-            jobberError = userErrors?.[0]?.message || 'Expense creation returned no ID';
-          }
-        } else {
-          jobberError = `Job #${fields.jobNo} not found in Jobber`;
-        }
-      } catch (jErr) {
-        jobberError = jErr.message;
-        console.error(`[process-incoming] ${rowId}: Jobber error:`, jErr.message);
       }
+
+      if (!job) {
+        let cursor = null;
+        for (let page = 0; page < 20 && !job; page++) {
+          const query = cursor
+            ? `query PageJobs($cursor: String!) { jobs(first: 100, after: $cursor) { nodes { id jobNumber title } edges { node { id jobNumber title } } pageInfo { hasNextPage endCursor } } }`
+            : `query PageJobs { jobs(first: 100) { nodes { id jobNumber title } edges { node { id jobNumber title } } pageInfo { hasNextPage endCursor } } }`;
+          const result = await jobberGQL(query, cursor ? { cursor } : {});
+          if (result.errors?.length) break;
+          const jobsObj = result.data?.jobs;
+          job = extractNodes(jobsObj).find(j => String(j.jobNumber) === numStr);
+          if (job || !jobsObj?.pageInfo?.hasNextPage) break;
+          cursor = jobsObj.pageInfo.endCursor;
+        }
+      }
+
+      if (job) {
+        const titleParts = [fields.vendor, fields.invoiceNo ? `Invoice #${fields.invoiceNo}` : null].filter(Boolean);
+        const expInput = {
+          linkedJobId: job.id,
+          title: titleParts.length ? titleParts.join(' — ') : 'Expense',
+          total: parseFloat(fields.total) || 0,
+          date: (fields.date || new Date().toISOString().split('T')[0]) + 'T00:00:00Z'
+        };
+        if (fields.invoiceNo) expInput.description = `Invoice #${fields.invoiceNo}`;
+        if (receiptBlobUrl) expInput.receiptUrl = receiptBlobUrl;
+
+        const expResult = await jobberGQL(`
+          mutation CreateExpense($input: ExpenseCreateInput!) {
+            expenseCreate(input: $input) {
+              expense { id title total }
+              userErrors { message path }
+            }
+          }
+        `, { input: expInput });
+
+        const expense = expResult.data?.expenseCreate?.expense;
+        const userErrors = expResult.data?.expenseCreate?.userErrors;
+        if (expense?.id) {
+          jobberExpenseId = expense.id;
+          console.log(`[process-incoming] ${rowId}: Jobber expense created: ${jobberExpenseId}`);
+        } else {
+          jobberError = userErrors?.[0]?.message || 'Expense creation returned no ID';
+        }
+      } else {
+        jobberError = `Job #${fields.jobNo} not found in Jobber`;
+      }
+    } catch (jErr) {
+      jobberError = jErr.message;
+      console.error(`[process-incoming] ${rowId}: Jobber error:`, jErr.message);
     }
 
-    const receiptId = randomUUID();
-    const receiptStatus = jobberExpenseId ? 'posted' : (fields.jobNo ? 'error' : 'saved');
+    if (!jobberExpenseId) return markFailed(jobberError || 'Jobber post failed');
 
+    const receiptId = randomUUID();
     const { error: insertErr } = await sb.from('receipts').insert({
       id: receiptId,
       user_id: incoming.user_id,
@@ -220,29 +184,86 @@ app.all('/api/process-incoming', async (req, res) => {
       items: fields.items || [],
       receipt_blob_url: receiptBlobUrl,
       jobber_expense_id: jobberExpenseId,
-      status: receiptStatus,
-      error: jobberError || null,
+      status: 'posted',
+      error: null,
       saved_at: new Date().toISOString()
     });
 
     if (insertErr) {
       console.error(`[process-incoming] ${rowId}: receipts insert failed:`, insertErr.message);
-      return fail(`DB insert failed: ${insertErr.message}`);
+      return markFailed(`DB insert failed: ${insertErr.message}`);
     }
 
     await sb.from('incoming_receipts').update({
-      status: 'done',
-      error: jobberError || null,
-      processed_at: new Date().toISOString()
+      status: 'done', step: null, error: null, processed_at: new Date().toISOString()
     }).eq('id', rowId);
 
     console.log(`[process-incoming] ${rowId}: complete. receiptId=${receiptId}, jobberExpenseId=${jobberExpenseId}`);
-    return res.json({ success: true, id: rowId, receiptId, jobberExpenseId, jobberError: jobberError || null });
+    return { id: rowId, success: true, receiptId, jobberExpenseId };
 
   } catch (err) {
     console.error(`[process-incoming] ${rowId}: unhandled error:`, err);
-    return fail(err.message || 'Unknown error');
+    return markFailed(err.message || 'Unknown error');
   }
+}
+
+app.all('/api/process-incoming', async (req, res) => {
+  const secret = (process.env.PROCESS_SECRET || '').trim();
+  if (secret) {
+    const provided = (req.headers['x-process-secret'] || '').trim();
+    if (provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const sb = await getSupabaseAdmin();
+
+  // Fetch ALL pending rows
+  const { data: allPending, error: selectErr } = await sb
+    .from('incoming_receipts')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+
+  if (selectErr) return res.status(500).json({ error: selectErr.message });
+  if (!allPending || allPending.length === 0) return res.json({ success: true, message: 'No pending receipts' });
+
+  // Deduplicate by file_url — mark extras as done so they never re-queue
+  const seenUrls = new Set();
+  const toProcess = [], dupes = [];
+  for (const r of allPending) {
+    if (seenUrls.has(r.file_url)) dupes.push(r);
+    else { seenUrls.add(r.file_url); toProcess.push(r); }
+  }
+  for (const d of dupes) {
+    await sb.from('incoming_receipts').update({
+      status: 'done', error: 'Duplicate file — skipped', processed_at: new Date().toISOString()
+    }).eq('id', d.id);
+  }
+
+  console.log(`[process-incoming] ${toProcess.length} unique file(s) to process, ${dupes.length} duplicate(s) skipped`);
+
+  const results = [];
+  for (const pending of toProcess) {
+    // Atomic claim — skip if already claimed by another process
+    const { data: claimed } = await sb
+      .from('incoming_receipts')
+      .update({ status: 'processing', step: 'downloading' })
+      .eq('id', pending.id)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (!claimed || claimed.length === 0) {
+      console.log(`[process-incoming] ${pending.id}: already claimed, skipping`);
+      results.push({ id: pending.id, skipped: true });
+      continue;
+    }
+
+    const result = await processOneRow(sb, pending);
+    results.push(result);
+  }
+
+  const posted = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success && !r.skipped).length;
+  return res.json({ success: true, processed: toProcess.length, posted, failed, skipped: dupes.length, results });
 });
 
 // ── Auth middleware — verifies Supabase JWT ──
