@@ -8,7 +8,7 @@ const { randomUUID } = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-pro';
 
 app.use(cors({
   origin: true,
@@ -608,13 +608,13 @@ function extractFieldsFromLlama(content) {
       if (!desc && lastDesc) desc = lastDesc;
       if (desc) lastDesc = desc;
 
-      // Qty: integer up to 4 digits — UPC/catalog codes are 12+ digits so this is safe
+      // Qty: integer up to 4 digits (negative allowed for credit/return invoices)
       let qty = null;
       for (let c = priceCells.length - 1; c >= 1; c--) {
         const cell = (priceCells[c] || '').trim();
-        if (/^\d{1,4}$/.test(cell)) {
+        if (/^-?\d{1,4}$/.test(cell)) {
           const n = parseInt(cell, 10);
-          if (n > 0 && n !== Math.round(lineTotal)) { qty = n; break; }
+          if (n !== 0 && n !== Math.round(lineTotal)) { qty = n; break; }
         }
       }
 
