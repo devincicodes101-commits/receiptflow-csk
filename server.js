@@ -84,7 +84,6 @@ async function processOneRow(sb, incoming) {
     }
 
     console.log(`[process-incoming] ${rowId}: downloaded ${fileBuffer.length} bytes, mime=${mimeType}`);
-    await sb.from('incoming_receipts').update({ step: 'extracting' }).eq('id', rowId);
 
     const geminiOutput = await parseWithGemini(fileBuffer, mimeType);
     const fields = extractFieldsFromLlama(geminiOutput);
@@ -92,7 +91,6 @@ async function processOneRow(sb, incoming) {
 
     if (!fields.jobNo) return markFailed('No job number found on receipt');
 
-    await sb.from('incoming_receipts').update({ step: 'posting' }).eq('id', rowId);
 
     let jobberExpenseId = null;
     let jobberError = null;
@@ -195,7 +193,7 @@ async function processOneRow(sb, incoming) {
     }
 
     await sb.from('incoming_receipts').update({
-      status: 'done', step: null, error: null, processed_at: new Date().toISOString()
+      status: 'done', error: null, processed_at: new Date().toISOString()
     }).eq('id', rowId);
 
     console.log(`[process-incoming] ${rowId}: complete. receiptId=${receiptId}, jobberExpenseId=${jobberExpenseId}`);
@@ -226,7 +224,7 @@ app.all('/api/process-incoming', async (req, res) => {
 
   // Reset ALL rows stuck in 'processing' — if processing completed they'd be 'done'/'failed'
   await sb.from('incoming_receipts')
-    .update({ status: 'pending', step: null, error: null })
+    .update({ status: 'pending', error: null })
     .eq('status', 'processing');
 
   // Fetch ALL pending rows
@@ -261,7 +259,7 @@ app.all('/api/process-incoming', async (req, res) => {
   for (const pending of toProcess) {
     const { data: claimed } = await sb
       .from('incoming_receipts')
-      .update({ status: 'processing', step: 'downloading' })
+      .update({ status: 'processing' })
       .eq('id', pending.id)
       .eq('status', 'pending')
       .select('id');
