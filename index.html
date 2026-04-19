@@ -270,7 +270,7 @@
 </div>
 
 <div id="toast-container" style="position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
-<input type="file" id="file-input" accept="image/*,.pdf,application/pdf" style="display:none">
+<input type="file" id="file-input" accept="image/*,.pdf,application/pdf" multiple style="display:none">
 
 <script>
 /* ── Supabase ── */
@@ -516,6 +516,8 @@ let state = {
     history: [],
     receipt: null,
     uploading: false,
+    fileQueue: [],
+    queueIndex: 0,
     editingJobId: null,
     postingToJobber: false,
     settings: {
@@ -675,12 +677,12 @@ function uploadHTML() {
                     <i class="fa-solid fa-cloud-arrow-up" style="font-size:28px;color:var(--brand);"></i>
                 </div>
             </div>
-            <div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:6px;">Drop your receipt here</div>
-            <div style="font-size:13px;color:#6B7280;margin-bottom:20px;">or click to browse files</div>
+            <div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:6px;">Drop receipts here</div>
+            <div style="font-size:13px;color:#6B7280;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
             <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">
-                <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose File
+                <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose Files
             </button>
-            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP (max 4MB) · PDF (any size)</div>
+            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP (max 4MB) · PDF (any size) · Up to 3 files</div>
         </div>
 
         <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
@@ -754,7 +756,15 @@ function reviewHTML() {
         ? '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Posting...'
         : '<i class="fa-solid fa-paper-plane" style="font-size:12px;"></i> Post to Jobber';
 
+    const queueBanner = state.fileQueue.length > 1
+        ? `<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+               <i class="fa-solid fa-layer-group" style="color:#4F46E5;font-size:14px;"></i>
+               <span style="font-size:13px;font-weight:600;color:#4F46E5;">Receipt ${state.queueIndex + 1} of ${state.fileQueue.length}</span>
+               <span style="font-size:12px;color:#6B7280;margin-left:4px;">${state.fileQueue.length - state.queueIndex - 1} more after this</span>
+           </div>` : '';
+
     return `<div class="fade-in">
+        ${queueBanner}
         <div class="review-layout">
 
             <!-- Receipt Image -->
@@ -889,7 +899,7 @@ function reviewHTML() {
                     <button class="btn btn-danger" id="btn-flag">
                         <i class="fa-solid fa-flag" style="font-size:11px;"></i> Flag as Error
                     </button>
-                    <button class="btn btn-ghost" onclick="navigate('upload')" style="margin-left:auto;">
+                    <button class="btn btn-ghost" onclick="advanceQueue()" style="margin-left:auto;">
                         <i class="fa-solid fa-xmark" style="font-size:11px;"></i> Discard
                     </button>
                 </div>
@@ -1362,14 +1372,14 @@ function bind() {
         dz.addEventListener('drop', e => {
             e.preventDefault();
             dz.classList.remove('dragover');
-            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+            if (e.dataTransfer.files.length) startFileQueue(Array.from(e.dataTransfer.files));
         });
     }
 
     const fi = document.getElementById('file-input');
     if (fi) {
         fi.addEventListener('change', e => {
-            if (e.target.files.length) handleFile(e.target.files[0]);
+            if (e.target.files.length) startFileQueue(Array.from(e.target.files));
             e.target.value = '';
         });
     }
@@ -1487,6 +1497,35 @@ function applyExtractResult(json) {
     document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
     toast('Receipt analyzed successfully!', 'success');
     render();
+}
+
+function startFileQueue(files) {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+    const valid = files.filter(f => allowed.includes(f.type)).slice(0, 3);
+    if (!valid.length) { toast('Please upload JPG, PNG, WEBP, or PDF files', 'error'); return; }
+    if (files.length > 3) toast('Only the first 3 files will be processed', 'info', 4000);
+    state.fileQueue = valid;
+    state.queueIndex = 0;
+    processNextInQueue();
+}
+
+async function processNextInQueue() {
+    const file = state.fileQueue[state.queueIndex];
+    if (!file) return;
+    if (state.fileQueue.length > 1)
+        toast(`Processing receipt ${state.queueIndex + 1} of ${state.fileQueue.length}…`, 'info');
+    await handleFile(file);
+}
+
+function advanceQueue() {
+    state.queueIndex++;
+    if (state.fileQueue.length > 0 && state.queueIndex < state.fileQueue.length) {
+        processNextInQueue();
+    } else {
+        state.fileQueue = [];
+        state.queueIndex = 0;
+        navigate('upload');
+    }
 }
 
 async function handleFile(file) {
@@ -1638,9 +1677,7 @@ async function postToJobber() {
         upsertReceipt(newRec).catch(e => console.warn('[supabase] save failed:', e.message));
         updateBadge();
         toast(`Posted to Jobber — Job #${jobNo}`, 'success', 5000);
-        setTimeout(() => {
-            navigate('upload');
-        }, 1000);
+        setTimeout(() => advanceQueue(), 1000);
     } catch (err) {
         state.postingToJobber = false;
         render();
@@ -1683,7 +1720,7 @@ async function saveReceipt() {
     updateBadge();
     upsertReceipt(rec).catch(e => console.warn('[supabase] save failed:', e.message));
     toast('Receipt saved to history', 'success');
-    navigate('upload');
+    advanceQueue();
 }
 
 function flagError() {
@@ -1714,7 +1751,7 @@ function flagError() {
     updateBadge();
     upsertReceipt(rec).catch(e => console.warn('[supabase] flag failed:', e.message));
     toast('Receipt flagged and moved to error queue', 'info');
-    navigate('upload');
+    advanceQueue();
 }
 
 /* ── Post saved receipt to Jobber from history ── */
