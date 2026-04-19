@@ -208,10 +208,18 @@ async function processOneRow(sb, incoming) {
 }
 
 app.all('/api/process-incoming', async (req, res) => {
+  // Accept either x-process-secret (n8n/GitHub Actions) or Vercel's auto cron Bearer token
   const secret = (process.env.PROCESS_SECRET || '').trim();
-  if (secret) {
-    const provided = (req.headers['x-process-secret'] || '').trim();
-    if (provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  const provided = (req.headers['x-process-secret'] || '').trim();
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+  const validSecret = secret && provided === secret;
+  const validCron = cronSecret && bearer === cronSecret;
+  const noAuthConfigured = !secret && !cronSecret;
+
+  if (!noAuthConfigured && !validSecret && !validCron) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const sb = await getSupabaseAdmin();
@@ -239,26 +247,33 @@ app.all('/api/process-incoming', async (req, res) => {
     }).eq('id', d.id);
   }
 
-  // Pick only the FIRST unique pending row — next cron run handles the next one
-  const pending = toProcess[0];
-  if (!pending) return res.json({ success: true, message: 'No pending receipts after dedup', skipped: dupes.length });
+  if (toProcess.length === 0) return res.json({ success: true, message: 'No pending receipts after dedup', skipped: dupes.length });
 
-  // Atomic claim — bail if already claimed by another process
-  const { data: claimed } = await sb
-    .from('incoming_receipts')
-    .update({ status: 'processing', step: 'downloading' })
-    .eq('id', pending.id)
-    .eq('status', 'pending')
-    .select('id');
+  console.log(`[process-incoming] ${toProcess.length} unique file(s) to process, ${dupes.length} duplicate(s) skipped`);
 
-  if (!claimed || claimed.length === 0) {
-    console.log(`[process-incoming] ${pending.id}: already claimed, skipping`);
-    return res.json({ success: true, message: 'Row already claimed by another process' });
+  // Process ALL pending rows sequentially — one failure won't block the others
+  const results = [];
+  for (const pending of toProcess) {
+    const { data: claimed } = await sb
+      .from('incoming_receipts')
+      .update({ status: 'processing', step: 'downloading' })
+      .eq('id', pending.id)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (!claimed || claimed.length === 0) {
+      console.log(`[process-incoming] ${pending.id}: already claimed, skipping`);
+      results.push({ id: pending.id, skipped: true });
+      continue;
+    }
+
+    const result = await processOneRow(sb, pending);
+    results.push(result);
   }
 
-  console.log(`[process-incoming] processing 1 of ${toProcess.length} pending, ${dupes.length} dupe(s) cleared`);
-  const result = await processOneRow(sb, pending);
-  return res.json({ success: true, ...result, remaining: toProcess.length - 1, skipped: dupes.length });
+  const posted = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success && !r.skipped).length;
+  return res.json({ success: true, processed: toProcess.length, posted, failed, skipped: dupes.length, results });
 });
 
 // ── Auth middleware — verifies Supabase JWT ──
