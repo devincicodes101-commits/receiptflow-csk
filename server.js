@@ -224,6 +224,13 @@ app.all('/api/process-incoming', async (req, res) => {
 
   const sb = await getSupabaseAdmin();
 
+  // Reset rows stuck in 'processing' for more than 10 minutes
+  const stuckCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await sb.from('incoming_receipts')
+    .update({ status: 'pending', step: null, error: 'Reset after stuck in processing' })
+    .eq('status', 'processing')
+    .lt('updated_at', stuckCutoff);
+
   // Fetch ALL pending rows
   const { data: allPending, error: selectErr } = await sb
     .from('incoming_receipts')
