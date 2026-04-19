@@ -30,7 +30,7 @@
             --sidebar-hover: rgba(255,255,255,0.05);
         }
         * { box-sizing: border-box; }
-        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; margin: 0; background: var(--surface); color: #111827; -webkit-font-smoothing: antialiased; }
+        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; margin: 0; background: #F8FAFC; color: #111827; -webkit-font-smoothing: antialiased; }
 
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -49,16 +49,25 @@
         .nav-badge { margin-left: auto; background: #E11D48; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; line-height: 1.6; }
 
         /* ── Upload zone ── */
-        .upload-zone { border: 2px dashed #D1D5DB; border-radius: 16px; padding: 48px 32px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: rgba(248,250,252,0.6); }
-        .upload-zone:hover { border-color: #FB923C; background: rgba(255,247,237,0.5); }
-        .upload-zone.dragover { border-color: var(--brand); background: rgba(255,247,237,0.65); transform: scale(1.005); }
+        .upload-zone { position: relative; overflow: hidden; border: 2px dashed rgba(249,115,22,0.3); border-radius: 16px; padding: 48px 32px; text-align: center; cursor: pointer; transition: all 0.22s ease; background: linear-gradient(135deg, rgba(255,247,237,0.7) 0%, #ffffff 55%, rgba(239,246,255,0.4) 100%); }
+        .upload-zone:hover { border-color: #F97316; background: linear-gradient(135deg, rgba(255,247,237,0.95) 0%, rgba(255,252,247,0.98) 55%, rgba(239,246,255,0.6) 100%); }
+        .upload-zone.dragover { border-color: var(--brand); border-style: solid; background: rgba(255,247,237,0.8); transform: scale(1.005); }
+        .upload-blob { position: absolute; border-radius: 50%; filter: blur(40px); pointer-events: none; }
+        .upload-blob-1 { width: 160px; height: 160px; background: rgba(249,115,22,0.12); top: -40px; left: -40px; }
+        .upload-blob-2 { width: 120px; height: 120px; background: rgba(59,130,246,0.08); bottom: -30px; right: -30px; }
 
         /* ── Badges ── */
-        .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.01em; }
-        .badge-posted { background: #ECFDF5; color: #047857; box-shadow: 0 0 0 1px rgba(5,150,105,0.18); }
-        .badge-jobber { background: #EFF6FF; color: #1D4ED8; box-shadow: 0 0 0 1px rgba(29,78,216,0.15); }
-        .badge-error { background: #FFF1F2; color: #BE123C; box-shadow: 0 0 0 1px rgba(225,29,72,0.15); }
-        .badge-processing { background: #FFFBEB; color: #92400E; box-shadow: 0 0 0 1px rgba(217,119,6,0.18); }
+        .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.01em; }
+        .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .badge-posted { background: #D1FAE5; color: #065F46; box-shadow: 0 0 0 1px rgba(16,185,129,0.2); }
+        .badge-posted .badge-dot { background: #10B981; }
+        .badge-jobber { background: #DBEAFE; color: #1E40AF; box-shadow: 0 0 0 1px rgba(59,130,246,0.2); }
+        .badge-jobber .badge-dot { background: #3B82F6; }
+        .badge-error { background: #FFE4E6; color: #9F1239; box-shadow: 0 0 0 1px rgba(244,63,94,0.2); }
+        .badge-error .badge-dot { background: #F43F5E; }
+        .badge-processing { background: #EDE9FE; color: #5B21B6; box-shadow: 0 0 0 1px rgba(139,92,246,0.2); }
+        .badge-processing .badge-dot { background: #8B5CF6; animation: pulse-dot 1.5s ease infinite; }
+        @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
 
         /* ── Progress ── */
         .progress-track { background: #E2E8F0; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 4px; }
@@ -71,7 +80,7 @@
         .data-table th { text-align: left; padding: 10px 16px; font-weight: 600; color: #94A3B8; border-bottom: 1px solid #E2E8F0; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; background: #F8FAFC; }
         .data-table td { padding: 13px 16px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; color: #374151; }
         .data-table tbody tr:last-child td { border-bottom: none; }
-        .data-table tbody tr:hover td { background: rgba(248,250,252,0.7); }
+        .data-table tbody tr:hover td { background: rgba(255,247,237,0.4); }
 
         /* ── Toasts ── */
         .toast { padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 9px; animation: slideIn 0.25s ease; max-width: 400px; }
@@ -118,13 +127,21 @@
         .inline-input { padding: 4px 8px; border: 1px solid var(--brand); border-radius: 4px; font-size: 13px; font-family: inherit; width: 130px; outline: none; box-shadow: 0 0 0 3px rgba(249,115,22,0.1); }
 
         /* ── Stat cards ── */
-        .stat-card { background: #fff; border: 1px solid rgba(226,232,240,0.8); border-radius: 16px; padding: 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06); transition: all 0.2s ease; }
-        .stat-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04); transform: translateY(-1px); }
-        .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; }
-        .stat-icon-blue { background: #EFF6FF; color: #3B82F6; }
-        .stat-icon-emerald { background: #ECFDF5; color: #059669; }
-        .stat-icon-rose { background: #FFF1F2; color: #E11D48; }
-        .stat-icon-orange { background: #FFF7ED; color: #F97316; }
+        .stat-card { border-radius: 16px; padding: 20px; display: flex; align-items: center; gap: 14px; transition: all 0.2s ease; }
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-card-blue  { background: linear-gradient(135deg, #EFF6FF 0%, #ffffff 100%); border: 1px solid #BFDBFE; box-shadow: 0 1px 3px rgba(59,130,246,0.08), 0 1px 2px rgba(0,0,0,0.04); }
+        .stat-card-blue:hover  { box-shadow: 0 8px 24px rgba(59,130,246,0.12), 0 2px 8px rgba(0,0,0,0.04); }
+        .stat-card-emerald { background: linear-gradient(135deg, #ECFDF5 0%, #ffffff 100%); border: 1px solid #A7F3D0; box-shadow: 0 1px 3px rgba(16,185,129,0.08), 0 1px 2px rgba(0,0,0,0.04); }
+        .stat-card-emerald:hover { box-shadow: 0 8px 24px rgba(16,185,129,0.12), 0 2px 8px rgba(0,0,0,0.04); }
+        .stat-card-rose { background: linear-gradient(135deg, #FFF1F2 0%, #ffffff 100%); border: 1px solid #FECDD3; box-shadow: 0 1px 3px rgba(244,63,94,0.08), 0 1px 2px rgba(0,0,0,0.04); }
+        .stat-card-rose:hover { box-shadow: 0 8px 24px rgba(244,63,94,0.12), 0 2px 8px rgba(0,0,0,0.04); }
+        .stat-card-orange { background: linear-gradient(135deg, #FFF7ED 0%, #ffffff 100%); border: 1px solid #FED7AA; box-shadow: 0 1px 3px rgba(249,115,22,0.08), 0 1px 2px rgba(0,0,0,0.04); }
+        .stat-card-orange:hover { box-shadow: 0 8px 24px rgba(249,115,22,0.15), 0 2px 8px rgba(0,0,0,0.04); }
+        .stat-icon { width: 42px; height: 42px; border-radius: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 17px; }
+        .stat-icon-blue { background: #3B82F6; color: #fff; box-shadow: 0 4px 10px rgba(59,130,246,0.35); }
+        .stat-icon-emerald { background: #10B981; color: #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.35); }
+        .stat-icon-rose { background: #F43F5E; color: #fff; box-shadow: 0 4px 10px rgba(244,63,94,0.35); }
+        .stat-icon-orange { background: #F97316; color: #fff; box-shadow: 0 4px 10px rgba(249,115,22,0.35); }
         .stat-body { min-width: 0; }
         .stat-value { font-size: 26px; font-weight: 600; color: #0F172A; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
         .stat-label { font-size: 11px; color: #94A3B8; font-weight: 500; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
@@ -251,29 +268,27 @@
         <nav style="padding:10px 0;flex:1;overflow-y:auto;">
             <div class="nav-section-label" style="padding-top:8px;">Main</div>
             <div class="nav-item active" data-view="upload" onclick="navigate('upload')">
-                <i class="fa-solid fa-cloud-arrow-up"></i>Upload Receipt
+                <i class="fa-solid fa-cloud-arrow-up" style="color:inherit;"></i>Upload Receipt
             </div>
             <div class="nav-item" data-view="history" onclick="navigate('history')">
-                <i class="fa-solid fa-clock-rotate-left"></i>History
+                <i class="fa-solid fa-clock-rotate-left" style="color:#93C5FD;"></i>History
             </div>
             <div class="nav-item" data-view="errors" onclick="navigate('errors')">
-                <i class="fa-solid fa-triangle-exclamation"></i>Error Queue
+                <i class="fa-solid fa-triangle-exclamation" style="color:#FCD34D;"></i>Error Queue
                 <span class="nav-badge" id="error-badge" style="display:none;">0</span>
             </div>
             <div class="nav-item" data-view="gmail" onclick="navigate('gmail')">
-                <i class="fa-solid fa-envelope"></i>Gmail Receipts
+                <i class="fa-solid fa-envelope" style="color:#FCA5A5;"></i>Gmail Receipts
                 <span class="nav-badge" id="gmail-badge" style="display:none;">0</span>
             </div>
             <div class="nav-section-label" style="padding-top:14px;">System</div>
             <div class="nav-item" data-view="settings" onclick="navigate('settings')">
-                <i class="fa-solid fa-gear"></i>Settings
+                <i class="fa-solid fa-gear" style="color:#94A3B8;"></i>Settings
             </div>
         </nav>
-        <div style="padding:14px 14px 14px;border-top:1px solid rgba(255,255,255,0.07);">
+        <div style="padding:14px;border-top:1px solid rgba(255,255,255,0.07);">
             <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">
-                <div style="width:28px;height:28px;background:rgba(249,115,22,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                    <i class="fa-solid fa-user" style="font-size:11px;color:#FB923C;"></i>
-                </div>
+                <div id="sidebar-avatar" style="width:30px;height:30px;background:linear-gradient(135deg,#FB923C,#EA580C);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700;color:#fff;box-shadow:0 2px 6px rgba(249,115,22,0.4);">?</div>
                 <div id="sidebar-user" style="font-size:12px;color:#94A3B8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"></div>
             </div>
             <button onclick="doLogout()" style="display:flex;align-items:center;gap:7px;background:none;border:none;color:#475569;font-size:12px;cursor:pointer;font-family:inherit;padding:0;transition:color 0.2s;" onmouseover="this.style.color='#E2E8F0'" onmouseout="this.style.color='#475569'">
@@ -298,7 +313,7 @@
                 <span id="api-status" style="display:none;font-size:12px;"></span>
             </div>
         </header>
-        <main id="content" style="flex:1;overflow-y:auto;padding:28px;background:var(--surface);"></main>
+        <main id="content" style="flex:1;overflow-y:auto;padding:28px;background:linear-gradient(135deg, rgba(255,247,237,0.25) 0%, #F8FAFC 45%, rgba(239,246,255,0.2) 100%);"></main>
     </div>
 </div>
 
@@ -450,6 +465,8 @@ async function showApp() {
     document.getElementById('app').style.display = 'flex';
     const sidebarUser = document.getElementById('sidebar-user');
     if (sidebarUser && currentUser) sidebarUser.textContent = currentUser.email;
+    const sidebarAvatar = document.getElementById('sidebar-avatar');
+    if (sidebarAvatar && currentUser?.email) sidebarAvatar.textContent = currentUser.email[0].toUpperCase();
     await loadReceiptsFromSupabase();
     checkHealth();
     updateBadge();
@@ -681,44 +698,78 @@ function render() {
 }
 
 /* ── Upload View ── */
+function vendorColor(name) {
+    const palettes = [
+        { bg:'#DBEAFE',fg:'#1D4ED8' }, { bg:'#D1FAE5',fg:'#065F46' },
+        { bg:'#FEF3C7',fg:'#92400E' }, { bg:'#EDE9FE',fg:'#5B21B6' },
+        { bg:'#FCE7F3',fg:'#9D174D' }, { bg:'#CCFBF1',fg:'#134E4A' },
+        { bg:'#FEE2E2',fg:'#991B1B' }, { bg:'#E0F2FE',fg:'#075985' },
+    ];
+    let h = 0;
+    for (const c of (name || '?')) h = (h * 37 + c.charCodeAt(0)) & 0xffff;
+    return palettes[h % palettes.length];
+}
+
+function badgeHTML(r) {
+    const isJobber = r.jobberExpenseId || r.status === 'jobber';
+    if (isJobber) return `<span class="badge badge-jobber"><span class="badge-dot"></span>In Jobber</span>`;
+    if (r.status === 'posted') return `<span class="badge badge-posted"><span class="badge-dot"></span>Saved</span>`;
+    return `<span class="badge badge-error"><span class="badge-dot"></span>Error</span>`;
+}
+
 function uploadHTML() {
     const s = stats();
     const hasHistory = state.history.length > 0;
-    return `<div class="fade-in" style="max-width:860px;">
+    return `<div class="fade-in" style="max-width:900px;">
 
-        <!-- Page header -->
-        <div style="margin-bottom:22px;">
-            <div style="font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.02em;">Upload Receipt</div>
-            <div style="font-size:13px;color:#6B7280;margin-top:3px;">Upload receipts to automatically extract details and sync to Jobber</div>
+        <!-- Hero strip -->
+        <div style="background:linear-gradient(135deg,#F97316 0%,#EA580C 50%,#D97706 100%);border-radius:16px;padding:18px 24px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 20px rgba(249,115,22,0.3);">
+            <div>
+                <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:2px;">
+                    ${s.total > 0 ? `You've processed ${s.total} receipt${s.total !== 1 ? 's' : ''} · ${fmt(s.amount)} extracted` : 'Welcome to ReceiptFlow — drop your first receipt below'}
+                </div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.8);">Powered by Gemini Vision · Syncs automatically to Jobber</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+                <div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:10px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fa-solid fa-receipt" style="color:#fff;font-size:16px;"></i>
+                </div>
+                <div style="width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fa-solid fa-arrow-right" style="color:rgba(255,255,255,0.7);font-size:13px;"></i>
+                </div>
+                <div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:10px;display:flex;align-items:center;justify-content:center;">
+                    <i class="fa-solid fa-briefcase" style="color:#fff;font-size:14px;"></i>
+                </div>
+            </div>
         </div>
 
         <!-- Stat cards -->
         <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card stat-card-blue">
                 <div class="stat-icon stat-icon-blue"><i class="fa-solid fa-file-lines"></i></div>
                 <div class="stat-body">
                     <div class="stat-value">${s.total}</div>
                     <div class="stat-label">Processed</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-emerald">
                 <div class="stat-icon stat-icon-emerald"><i class="fa-solid fa-circle-check"></i></div>
                 <div class="stat-body">
                     <div class="stat-value">${s.posted}</div>
                     <div class="stat-label">Parsed</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-rose">
                 <div class="stat-icon stat-icon-rose"><i class="fa-solid fa-triangle-exclamation"></i></div>
                 <div class="stat-body">
                     <div class="stat-value">${s.errors}</div>
                     <div class="stat-label">Flagged</div>
                 </div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-orange">
                 <div class="stat-icon stat-icon-orange"><i class="fa-solid fa-dollar-sign"></i></div>
                 <div class="stat-body">
-                    <div class="stat-value">${fmt(s.amount)}</div>
+                    <div class="stat-value" style="color:#EA580C;">${fmt(s.amount)}</div>
                     <div class="stat-label">Extracted</div>
                 </div>
             </div>
@@ -726,22 +777,32 @@ function uploadHTML() {
 
         <!-- Upload zone -->
         <div id="drop-zone" class="upload-zone">
-            <div style="margin-bottom:16px;">
-                <div style="width:52px;height:52px;background:#F97316;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto;box-shadow:0 4px 14px rgba(249,115,22,0.25);">
-                    <i class="fa-solid fa-cloud-arrow-up" style="font-size:22px;color:#fff;"></i>
+            <div class="upload-blob upload-blob-1"></div>
+            <div class="upload-blob upload-blob-2"></div>
+            <div style="position:relative;z-index:1;">
+                <div style="margin-bottom:16px;">
+                    <div style="width:54px;height:54px;background:linear-gradient(135deg,#FB923C,#EA580C);border-radius:15px;display:flex;align-items:center;justify-content:center;margin:0 auto;box-shadow:0 6px 18px rgba(249,115,22,0.3);">
+                        <i class="fa-solid fa-cloud-arrow-up" style="font-size:22px;color:#fff;"></i>
+                    </div>
                 </div>
+                <div style="font-size:15px;font-weight:600;color:#0F172A;margin-bottom:4px;">Drop receipts here</div>
+                <div style="font-size:13px;color:#64748B;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
+                <button class="btn btn-primary" style="padding:9px 22px;font-size:13.5px;" onclick="event.stopPropagation();document.getElementById('file-input').click()">
+                    <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose Files
+                </button>
+                <div style="margin-top:16px;font-size:11px;color:#94A3B8;letter-spacing:0.02em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; Up to 3 files</div>
             </div>
-            <div style="font-size:15px;font-weight:600;color:#0F172A;margin-bottom:4px;">Drop receipts here</div>
-            <div style="font-size:13px;color:#64748B;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
-            <button class="btn btn-primary" style="padding:8px 20px;" onclick="event.stopPropagation();document.getElementById('file-input').click()">
-                <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose Files
-            </button>
-            <div style="margin-top:16px;font-size:11px;color:#94A3B8;letter-spacing:0.02em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; Up to 3 files</div>
         </div>
 
-        <div style="margin-top:8px;display:flex;align-items:center;gap:5px;">
-            <i class="fa-solid fa-robot" style="color:#CBD5E1;font-size:10px;"></i>
-            <span style="font-size:11px;color:#CBD5E1;">Powered by Gemini Vision</span>
+        <!-- Tips card -->
+        <div style="margin-top:12px;background:linear-gradient(135deg,#EFF6FF,#F5F3FF);border:1px solid #C7D2FE;border-radius:12px;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;">
+            <div style="width:32px;height:32px;background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 8px rgba(99,102,241,0.3);">
+                <i class="fa-solid fa-lightbulb" style="color:#fff;font-size:13px;"></i>
+            </div>
+            <div>
+                <div style="font-size:12px;font-weight:700;color:#3730A3;margin-bottom:2px;">Pro tip</div>
+                <div style="font-size:12px;color:#4338CA;line-height:1.5;">Upload up to 3 receipts at once — ReceiptFlow processes them one by one and lets you review each before syncing to Jobber.</div>
+            </div>
         </div>
 
         ${hasHistory ? `
@@ -753,12 +814,20 @@ function uploadHTML() {
                     <tbody>
                     ${state.history.slice(0, 5).map(r => {
                         const shortId = (r.id || '').length > 18 ? (r.id || '').slice(0, 18) + '…' : (r.id || '');
+                        const vc = vendorColor(r.vendor || '');
+                        const initial = (r.vendor || '?')[0].toUpperCase();
+                        const jobPill = r.jobNo
+                            ? `<span style="background:#F1F5F9;color:#475569;padding:2px 8px;border-radius:6px;font-family:monospace;font-size:11px;font-weight:600;">${escHtml(r.jobNo)}</span>`
+                            : `<span style="color:#F43F5E;font-size:12px;font-weight:500;">Not found</span>`;
                         return `<tr>
-                        <td style="color:#64748B;font-family:monospace;font-size:11.5px;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
-                        <td style="font-weight:500;color:#0F172A;">${escHtml(r.vendor || '—')}</td>
+                        <td style="color:#94A3B8;font-family:monospace;font-size:11px;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
+                        <td><div style="display:flex;align-items:center;gap:9px;">
+                            <div style="width:28px;height:28px;background:${vc.bg};color:${vc.fg};border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${initial}</div>
+                            <span style="font-weight:500;color:#0F172A;">${escHtml(r.vendor || '—')}</span>
+                        </div></td>
                         <td style="font-weight:600;color:#0F172A;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
-                        <td style="font-family:monospace;font-size:11.5px;color:${r.jobNo ? '#374151' : '#E11D48'};">${escHtml(r.jobNo || 'Not found')}</td>
-                        <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
+                        <td>${jobPill}</td>
+                        <td>${badgeHTML(r)}</td>
                     </tr>`;}).join('')}
                     </tbody>
                 </table>
