@@ -239,31 +239,26 @@ app.all('/api/process-incoming', async (req, res) => {
     }).eq('id', d.id);
   }
 
-  console.log(`[process-incoming] ${toProcess.length} unique file(s) to process, ${dupes.length} duplicate(s) skipped`);
+  // Pick only the FIRST unique pending row — next cron run handles the next one
+  const pending = toProcess[0];
+  if (!pending) return res.json({ success: true, message: 'No pending receipts after dedup', skipped: dupes.length });
 
-  const results = [];
-  for (const pending of toProcess) {
-    // Atomic claim — skip if already claimed by another process
-    const { data: claimed } = await sb
-      .from('incoming_receipts')
-      .update({ status: 'processing', step: 'downloading' })
-      .eq('id', pending.id)
-      .eq('status', 'pending')
-      .select('id');
+  // Atomic claim — bail if already claimed by another process
+  const { data: claimed } = await sb
+    .from('incoming_receipts')
+    .update({ status: 'processing', step: 'downloading' })
+    .eq('id', pending.id)
+    .eq('status', 'pending')
+    .select('id');
 
-    if (!claimed || claimed.length === 0) {
-      console.log(`[process-incoming] ${pending.id}: already claimed, skipping`);
-      results.push({ id: pending.id, skipped: true });
-      continue;
-    }
-
-    const result = await processOneRow(sb, pending);
-    results.push(result);
+  if (!claimed || claimed.length === 0) {
+    console.log(`[process-incoming] ${pending.id}: already claimed, skipping`);
+    return res.json({ success: true, message: 'Row already claimed by another process' });
   }
 
-  const posted = results.filter(r => r.success).length;
-  const failed = results.filter(r => !r.success && !r.skipped).length;
-  return res.json({ success: true, processed: toProcess.length, posted, failed, skipped: dupes.length, results });
+  console.log(`[process-incoming] processing 1 of ${toProcess.length} pending, ${dupes.length} dupe(s) cleared`);
+  const result = await processOneRow(sb, pending);
+  return res.json({ success: true, ...result, remaining: toProcess.length - 1, skipped: dupes.length });
 });
 
 // ── Auth middleware — verifies Supabase JWT ──
