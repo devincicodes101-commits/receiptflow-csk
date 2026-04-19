@@ -17,46 +17,59 @@
         :root {
             --brand: #B8620A;
             --brand-hover: #9A5309;
-            --brand-light: #FDF3E7;
+            --brand-light: #FFF7ED;
+            --brand-border: #FED7AA;
+            --success: #059669;
+            --danger: #DC2626;
+            --warning: #D97706;
+            --neutral: #6B7280;
             --sidebar-bg: #111113;
             --sidebar-hover: #1C1C1F;
-            --sidebar-active: #262629;
+            --sidebar-active: #1E1E22;
         }
         * { box-sizing: border-box; }
-        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; margin: 0; background: #F7F8FA; color: #1F2937; }
+        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; margin: 0; background: #F7F8FA; color: #1F2937; -webkit-font-smoothing: antialiased; }
 
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
 
+        /* ── Sidebar ── */
         .sidebar { background: var(--sidebar-bg); width: 232px; min-width: 232px; display: flex; flex-direction: column; }
-        .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; margin: 1px 8px; border-radius: 6px; color: #9CA3AF; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.12s ease; border-left: 3px solid transparent; user-select: none; }
+        .nav-section-label { padding: 0 14px 5px; font-size: 10px; font-weight: 700; color: #4B5563; text-transform: uppercase; letter-spacing: 0.1em; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 14px; margin: 1px 8px; border-radius: 7px; color: #9CA3AF; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.12s ease; border-left: 2px solid transparent; user-select: none; }
         .nav-item:hover { background: var(--sidebar-hover); color: #D1D5DB; }
         .nav-item.active { background: var(--sidebar-active); color: #fff; border-left-color: var(--brand); }
-        .nav-item i { width: 18px; text-align: center; font-size: 13px; }
+        .nav-item i { width: 18px; text-align: center; font-size: 14px; }
         .nav-badge { margin-left: auto; background: #DC2626; color: #fff; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 10px; line-height: 1.5; }
 
-        .upload-zone { border: 2px dashed #D1D5DB; border-radius: 12px; padding: 56px 32px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: #fff; }
-        .upload-zone:hover { border-color: var(--brand); background: var(--brand-light); }
-        .upload-zone.dragover { border-color: var(--brand); background: var(--brand-light); transform: scale(1.01); }
+        /* ── Upload zone ── */
+        .upload-zone { border: 2px dashed #D1D5DB; border-radius: 14px; padding: 56px 32px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: rgba(249,250,251,0.5); }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--brand); background: var(--brand-light); }
+        .upload-zone.dragover { transform: scale(1.01); }
 
-        .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 600; }
-        .badge-posted { background: #ECFDF5; color: #059669; }
-        .badge-jobber { background: #EEF2FF; color: #4F46E5; }
-        .badge-error { background: #FEF2F2; color: #DC2626; }
-        .badge-processing { background: #FFFBEB; color: #D97706; }
+        /* ── Badges ── */
+        .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.01em; }
+        .badge-posted { background: #ECFDF5; color: #047857; }
+        .badge-jobber { background: #EEF2FF; color: #4338CA; }
+        .badge-error { background: #FEF2F2; color: #B91C1C; }
+        .badge-processing { background: #FFFBEB; color: #B45309; }
+
+        /* ── Progress ── */
         .progress-track { background:#E5E7EB; border-radius:6px; height:10px; overflow:hidden; margin-top:4px; }
         .progress-fill { height:100%; border-radius:6px; background:linear-gradient(90deg,#4F46E5,#7C3AED); transition:width 0.6s ease; }
         @keyframes progress-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
         .progress-fill.active { animation: progress-pulse 1.5s infinite; }
 
+        /* ── Data table ── */
         .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .data-table th { text-align: left; padding: 9px 12px; font-weight: 600; color: #6B7280; border-bottom: 1px solid #E5E7EB; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; background: #F9FAFB; }
-        .data-table td { padding: 11px 12px; border-bottom: 1px solid #F3F4F6; vertical-align: middle; }
+        .data-table th { text-align: left; padding: 9px 14px; font-weight: 700; color: #9CA3AF; border-bottom: 1px solid #E5E7EB; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; background: #FAFAFA; }
+        .data-table td { padding: 12px 14px; border-bottom: 1px solid #F3F4F6; vertical-align: middle; }
         .data-table tbody tr:last-child td { border-bottom: none; }
-        .data-table tbody tr:hover td { background: #FAFBFB; }
+        .data-table tbody tr:hover td { background: #F9FAFB; }
 
+        /* ── Toasts ── */
         .toast { padding: 11px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; box-shadow: 0 4px 20px rgba(0,0,0,0.16); display: flex; align-items: center; gap: 9px; animation: slideIn 0.25s ease; max-width: 400px; }
         .toast-success { background: #059669; color: #fff; }
         .toast-error { background: #DC2626; color: #fff; }
@@ -65,6 +78,7 @@
         @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
 
+        /* ── Toggle ── */
         .toggle { position: relative; width: 38px; height: 21px; cursor: pointer; display: inline-block; }
         .toggle input { display: none; }
         .toggle-track { position: absolute; inset: 0; background: #D1D5DB; border-radius: 11px; transition: background 0.2s ease; }
@@ -72,15 +86,17 @@
         .toggle input:checked ~ .toggle-track { background: var(--brand); }
         .toggle input:checked ~ .toggle-thumb { transform: translateX(17px); }
 
+        /* ── Form ── */
         .form-input { width: 100%; padding: 7px 11px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; font-family: inherit; color: #1F2937; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
         .form-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(184,98,10,0.08); }
         .form-input::placeholder { color: #9CA3AF; }
         .form-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
 
-        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; transition: all 0.12s ease; }
-        .btn-primary { background: var(--brand); color: #fff; }
-        .btn-primary:hover { background: var(--brand-hover); }
-        .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+        /* ── Buttons ── */
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 7px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; transition: all 0.15s ease; }
+        .btn-primary { background: var(--brand); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+        .btn-primary:hover { background: var(--brand-hover); box-shadow: 0 4px 12px rgba(184,98,10,0.3); transform: translateY(-1px); }
+        .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
         .btn-jobber { background: #4F46E5; color: #fff; }
         .btn-jobber:hover { background: #4338CA; }
         .btn-jobber:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -97,9 +113,17 @@
 
         .inline-input { padding: 4px 8px; border: 1px solid var(--brand); border-radius: 4px; font-size: 13px; font-family: inherit; width: 130px; outline: none; box-shadow: 0 0 0 3px rgba(184,98,10,0.08); }
 
-        .stat-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 8px; padding: 14px 16px; }
-        .stat-value { font-size: 22px; font-weight: 800; color: #111827; line-height: 1.1; }
-        .stat-label { font-size: 11.5px; color: #6B7280; font-weight: 500; margin-top: 3px; }
+        /* ── Stat cards ── */
+        .stat-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 14px; transition: box-shadow 0.18s ease, border-color 0.18s ease; }
+        .stat-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); border-color: #D1D5DB; }
+        .stat-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
+        .stat-icon-gray { background: #F3F4F6; color: #6B7280; }
+        .stat-icon-green { background: #ECFDF5; color: #059669; }
+        .stat-icon-red { background: #FEF2F2; color: #DC2626; }
+        .stat-icon-orange { background: var(--brand-light); color: var(--brand); }
+        .stat-body { min-width: 0; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #111827; line-height: 1.15; letter-spacing: -0.02em; }
+        .stat-label { font-size: 10.5px; color: #9CA3AF; font-weight: 600; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.07em; }
 
         .fade-in { animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -221,7 +245,7 @@
             </div>
         </div>
         <nav style="padding:10px 0;flex:1;overflow-y:auto;">
-            <div style="padding:0 14px 6px;font-size:10px;font-weight:600;color:#4B5563;text-transform:uppercase;letter-spacing:0.08em;">Main</div>
+            <div class="nav-section-label" style="padding-top:8px;">Main</div>
             <div class="nav-item active" data-view="upload" onclick="navigate('upload')">
                 <i class="fa-solid fa-cloud-arrow-up"></i>Upload Receipt
             </div>
@@ -236,7 +260,7 @@
                 <i class="fa-solid fa-envelope"></i>Gmail Receipts
                 <span class="nav-badge" id="gmail-badge" style="display:none;">0</span>
             </div>
-            <div style="padding:14px 14px 6px;font-size:10px;font-weight:600;color:#4B5563;text-transform:uppercase;letter-spacing:0.08em;">System</div>
+            <div class="nav-section-label" style="padding-top:14px;">System</div>
             <div class="nav-item" data-view="settings" onclick="navigate('settings')">
                 <i class="fa-solid fa-gear"></i>Settings
             </div>
@@ -251,7 +275,7 @@
 
     <!-- Main -->
     <div class="flex-1 flex flex-col overflow-hidden">
-        <header style="height:48px;border-bottom:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;">
+        <header style="height:52px;border-bottom:1px solid #E5E7EB;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;">
             <div style="display:flex;align-items:center;gap:10px;">
                 <button class="mobile-menu-btn btn btn-ghost" onclick="toggleSidebar()" style="padding:6px 8px;">
                     <i class="fa-solid fa-bars" style="font-size:16px;color:#374151;"></i>
@@ -652,58 +676,81 @@ function uploadHTML() {
     const s = stats();
     const hasHistory = state.history.length > 0;
     return `<div class="fade-in" style="max-width:860px;">
+
+        <!-- Page header -->
+        <div style="margin-bottom:22px;">
+            <div style="font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.02em;">Upload Receipt</div>
+            <div style="font-size:13px;color:#6B7280;margin-top:3px;">Upload receipts to automatically extract details and sync to Jobber</div>
+        </div>
+
+        <!-- Stat cards -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-value">${s.total}</div>
-                <div class="stat-label">Total Processed</div>
+                <div class="stat-icon stat-icon-gray"><i class="fa-solid fa-file-lines"></i></div>
+                <div class="stat-body">
+                    <div class="stat-value">${s.total}</div>
+                    <div class="stat-label">Total Processed</div>
+                </div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" style="color:#059669;">${s.posted}</div>
-                <div class="stat-label">Successfully Parsed</div>
+                <div class="stat-icon stat-icon-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="stat-body">
+                    <div class="stat-value">${s.posted}</div>
+                    <div class="stat-label">Successfully Parsed</div>
+                </div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" style="color:#DC2626;">${s.errors}</div>
-                <div class="stat-label">Errors / Flagged</div>
+                <div class="stat-icon stat-icon-red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="stat-body">
+                    <div class="stat-value">${s.errors}</div>
+                    <div class="stat-label">Errors / Flagged</div>
+                </div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">${fmt(s.amount)}</div>
-                <div class="stat-label">Total Extracted</div>
+                <div class="stat-icon stat-icon-orange"><i class="fa-solid fa-dollar-sign"></i></div>
+                <div class="stat-body">
+                    <div class="stat-value">${fmt(s.amount)}</div>
+                    <div class="stat-label">Total Extracted</div>
+                </div>
             </div>
         </div>
 
+        <!-- Upload zone -->
         <div id="drop-zone" class="upload-zone">
             <div style="margin-bottom:16px;">
-                <div style="width:64px;height:64px;background:var(--brand-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;">
-                    <i class="fa-solid fa-cloud-arrow-up" style="font-size:28px;color:var(--brand);"></i>
+                <div style="width:60px;height:60px;background:var(--brand-light);border:1px solid var(--brand-border);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto;">
+                    <i class="fa-solid fa-cloud-arrow-up" style="font-size:26px;color:var(--brand);"></i>
                 </div>
             </div>
-            <div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:6px;">Drop receipts here</div>
-            <div style="font-size:13px;color:#6B7280;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
+            <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:6px;">Drop receipts here</div>
+            <div style="font-size:13px;color:#9CA3AF;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
             <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('file-input').click()">
                 <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose Files
             </button>
-            <div style="margin-top:16px;font-size:11.5px;color:#9CA3AF;">Supports JPG, PNG, WEBP (max 4MB) · PDF (any size) · Up to 3 files</div>
+            <div style="margin-top:16px;font-size:11px;color:#C4C9D4;letter-spacing:0.02em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; Up to 3 files</div>
         </div>
 
-        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
-            <i class="fa-solid fa-robot" style="color:#9CA3AF;font-size:12px;"></i>
-            <span style="font-size:11.5px;color:#9CA3AF;">Powered by Gemini Vision — extracts vendor, amount, invoice number, line items, and posts expenses to Jobber</span>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:6px;">
+            <i class="fa-solid fa-robot" style="color:#D1D5DB;font-size:11px;"></i>
+            <span style="font-size:11px;color:#C4C9D4;">Powered by Gemini Vision</span>
         </div>
 
         ${hasHistory ? `
         <div style="margin-top:28px;">
-            <div style="font-size:12px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Recent Uploads</div>
-            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+            <div style="font-size:11px;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Recent Uploads</div>
+            <div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
                 <table class="data-table">
                     <thead><tr><th>Receipt</th><th>Vendor</th><th>Amount</th><th>Job #</th><th>Status</th></tr></thead>
                     <tbody>
-                    ${state.history.slice(0, 5).map(r => `<tr>
-                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:12px;">${r.id}</td>
-                        <td>${escHtml(r.vendor || '—')}</td>
+                    ${state.history.slice(0, 5).map(r => {
+                        const shortId = (r.id || '').length > 18 ? (r.id || '').slice(0, 18) + '…' : (r.id || '');
+                        return `<tr>
+                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:11.5px;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
+                        <td style="font-weight:500;">${escHtml(r.vendor || '—')}</td>
                         <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
-                        <td style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</td>
+                        <td style="font-family:monospace;font-size:11.5px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</td>
                         <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
-                    </tr>`).join('')}
+                    </tr>`;}).join('')}
                     </tbody>
                 </table>
             </div>
@@ -942,21 +989,23 @@ function historyHTML() {
                         </tr>
                     </thead>
                     <tbody id="history-tbody">
-                    ${state.history.map(r => `<tr data-status="${r.status}" data-search="${(r.vendor || '').toLowerCase()} ${(r.invoiceNo || '').toLowerCase()}">
-                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:12px;">${r.id}</td>
-                        <td>${escHtml(r.vendor || '—')}</td>
-                        <td style="color:#6B7280;white-space:nowrap;">${fmtDate(r.date)}</td>
-                        <td style="font-family:monospace;font-size:12px;color:#6B7280;">${escHtml(r.invoiceNo || '—')}</td>
+                    ${state.history.map(r => {
+                        const shortId = (r.id || '').length > 20 ? (r.id || '').slice(0, 20) + '…' : (r.id || '');
+                        return `<tr data-status="${r.status}" data-search="${(r.vendor || '').toLowerCase()} ${(r.invoiceNo || '').toLowerCase()}">
+                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:11.5px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
+                        <td style="font-weight:500;">${escHtml(r.vendor || '—')}</td>
+                        <td style="color:#6B7280;white-space:nowrap;font-size:12px;">${fmtDate(r.date)}</td>
+                        <td style="font-family:monospace;font-size:11.5px;color:#6B7280;">${escHtml(r.invoiceNo || '—')}</td>
                         <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
-                        <td><span style="font-family:monospace;font-size:12px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
+                        <td><span style="font-family:monospace;font-size:11.5px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
                         <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
-                        <td style="color:#9CA3AF;font-size:12px;white-space:nowrap;">${r.savedAt || '—'}</td>
+                        <td style="color:#9CA3AF;font-size:11.5px;white-space:nowrap;">${r.savedAt || '—'}</td>
                         <td>${(r.jobberExpenseId || r.status === 'jobber')
-                            ? '<span style="font-size:12px;color:#4F46E5;font-weight:600;">&#10003; In Jobber</span>'
+                            ? '<span style="font-size:12px;color:#4338CA;font-weight:600;">&#10003; In Jobber</span>'
                             : r.status === 'posted' ? `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${r.id}')">Post to Jobber</button>` : '—'
                         }</td>
                         <td><button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.id}')" title="Delete"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button></td>
-                    </tr>`).join('')}
+                    </tr>`;}).join('')}
                     </tbody>
                 </table></div>
                </div>`
