@@ -1156,18 +1156,51 @@ function historyPreviewPaneHTML(rec) {
 }
 
 function historyDocHTML(rec) {
+    // If we have the actual receipt file, show it directly
+    if (rec.receiptBlobUrl) {
+        const url = rec.receiptBlobUrl;
+        const isImg = /\.(jpe?g|png|webp|gif)(\?|$)/i.test(url);
+        if (isImg) {
+            return `<div style="flex:1;overflow:auto;padding:20px;background:#F8FAFC;display:flex;align-items:flex-start;justify-content:center;min-width:0;">
+                <img src="${escHtml(url)}" alt="Receipt"
+                    style="max-width:100%;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.1);border:1px solid #E2E8F0;">
+            </div>`;
+        }
+        return `<div style="flex:1;overflow:hidden;padding:20px;background:#F8FAFC;display:flex;flex-direction:column;min-width:0;">
+            <iframe src="${escHtml(url)}"
+                style="flex:1;width:100%;border:none;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.1);"
+                title="Receipt PDF"></iframe>
+        </div>`;
+    }
+
+    // Fallback: rendered invoice view using extracted data
+    // Real items use: { desc, qty, unit (= unit price), total }
+    // Mock items use: { description, qty, unit (= UoM string), unitPrice, totalPrice }
     const items = rec.items || [];
+    const isMockData = items.length > 0 && items[0].totalPrice !== undefined;
     const itemRows = items.map(item => {
-        const tot = parseFloat(item.totalPrice) || (parseFloat(item.unitPrice||0) * parseFloat(item.qty||1));
+        const descText = item.description || item.desc || '';
+        const qtyText = item.qty != null ? String(item.qty) : '';
+        // Real data: unit = unit price (number), total = line total
+        // Mock data: unit = UoM string, unitPrice + totalPrice
+        let unitText, totVal;
+        if (isMockData) {
+            unitText = item.unit || '';
+            totVal = parseFloat(item.totalPrice) || 0;
+        } else {
+            unitText = item.unit != null ? fmt(item.unit) : '—';
+            totVal = parseFloat(item.total) || 0;
+        }
         return `<tr>
-            <td style="padding:6px 8px;font-size:11.5px;color:#374151;border-bottom:1px solid #F1F5F9;">${escHtml(item.description||item.desc||'')}</td>
-            <td style="padding:6px 8px;font-size:11.5px;color:#64748B;border-bottom:1px solid #F1F5F9;text-align:center;">${escHtml(String(item.qty||''))}</td>
-            <td style="padding:6px 8px;font-size:11.5px;color:#64748B;border-bottom:1px solid #F1F5F9;text-align:center;">${escHtml(item.unit||'')}</td>
-            <td style="padding:6px 8px;font-size:11.5px;color:#374151;border-bottom:1px solid #F1F5F9;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;">${fmt(tot)}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#374151;border-bottom:1px solid #F1F5F9;">${escHtml(descText)}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#64748B;border-bottom:1px solid #F1F5F9;text-align:center;">${escHtml(qtyText)}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#64748B;border-bottom:1px solid #F1F5F9;text-align:right;font-variant-numeric:tabular-nums;">${escHtml(unitText)}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#374151;border-bottom:1px solid #F1F5F9;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;">${fmt(totVal)}</td>
         </tr>`;
     }).join('');
     const subtotal = rec.amount / 1.05;
     const gst = rec.amount - subtotal;
+    const unitColHeader = isMockData ? 'Unit' : 'Unit Price';
     return `<div style="flex:1;overflow-y:auto;padding:20px;background:#F8FAFC;display:flex;justify-content:center;min-width:0;">
         <div style="width:100%;max-width:500px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.05);flex-shrink:0;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid #F1F5F9;">
@@ -1188,7 +1221,7 @@ function historyDocHTML(rec) {
                     <thead><tr style="background:#F8FAFC;">
                         <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:left;border-bottom:2px solid #E2E8F0;">Description</th>
                         <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:center;border-bottom:2px solid #E2E8F0;">Qty</th>
-                        <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:center;border-bottom:2px solid #E2E8F0;">Unit</th>
+                        <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:right;border-bottom:2px solid #E2E8F0;">${unitColHeader}</th>
                         <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:right;border-bottom:2px solid #E2E8F0;">Amount</th>
                     </tr></thead>
                     <tbody>${itemRows}</tbody>
