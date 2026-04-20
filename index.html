@@ -2231,11 +2231,10 @@ async function queueUploadFiles(files) {
     if (queueIds.length > 0) {
         const msg = failed > 0
             ? `${queueIds.length} queued, ${failed} failed — check console for details`
-            : `${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — processing in background`;
+            : `${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — n8n will process them shortly`;
         toast(msg, failed > 0 ? 'warning' : 'success', 6000);
         await loadReviewQueue();
         navigate('review-queue');
-        processQueueSequentially(queueIds);
     } else if (failed > 0) {
         toast(`All ${failed} uploads failed — open browser console (F12) for details`, 'error', 8000);
         navigate('upload');
@@ -2396,12 +2395,6 @@ async function loadReviewQueue() {
             .order('created_at', { ascending: false });
         state.reviewItems = data || [];
         updateReviewBadge();
-
-        // Auto-resume: if pending items exist and no browser loop is running, start one
-        const pendingIds = (data || []).filter(i => i.status === 'pending').map(i => i.id);
-        if (pendingIds.length > 0 && !_queueProcessingActive) {
-            processQueueSequentially(pendingIds);
-        }
     } catch (e) {
         console.warn('[review-queue] load error:', e.message);
     }
