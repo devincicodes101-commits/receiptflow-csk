@@ -580,6 +580,7 @@ let state = {
     selectedQueueItemId: null,
     savingQueueItem: false,
     postingQueueItem: false,
+    uploadProgress: null,
     settings: {
         requireConfirm: true,
         category: 'Materials'
@@ -703,7 +704,7 @@ function render() {
     el.style.padding = (isHistory || isRQ) ? '0' : '28px';
     el.style.overflowY = (isHistory || isRQ) ? 'hidden' : 'auto';
     el.style.background = (isHistory || isRQ) ? '#fff' : 'linear-gradient(135deg, rgba(255,247,237,0.25) 0%, #F8FAFC 45%, rgba(239,246,255,0.2) 100%)';
-    if (state.view === 'upload') el.innerHTML = state.uploading ? uploadingHTML() : uploadHTML();
+    if (state.view === 'upload') el.innerHTML = state.uploadProgress ? uploadProgressHTML() : (state.uploading ? uploadingHTML() : uploadHTML());
     else if (state.view === 'review') el.innerHTML = reviewHTML();
     else if (state.view === 'history') el.innerHTML = historyHTML();
     else if (state.view === 'errors') el.innerHTML = errorsHTML();
@@ -862,6 +863,77 @@ function uploadingHTML() {
             </div>
             <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:#9CA3AF;">
                 <i class="fa-regular fa-circle" style="width:16px;"></i> Detecting job number
+            </div>
+        </div>
+    </div>`;
+}
+
+/* ── Upload Progress View ── */
+function uploadProgressHTML() {
+    const p = state.uploadProgress;
+    if (!p) return '';
+    const secs = Math.max(0, p.secsLeft);
+    const mins = Math.floor(secs / 60);
+    const s = secs % 60;
+    const timeStr = mins > 0 ? `${mins}m ${s}s` : `${s}s`;
+    const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
+
+    const fileRows = p.files.map((f, i) => {
+        let icon, color;
+        if (i < p.current)      { icon = 'fa-check-circle'; color = '#059669'; }
+        else if (i === p.current){ icon = 'fa-spinner fa-spin'; color = 'var(--brand)'; }
+        else                     { icon = 'fa-circle'; color = '#D1D5DB'; }
+        return `<div style="display:flex;align-items:center;gap:10px;font-size:12.5px;padding:5px 0;border-bottom:1px solid #F1F5F9;">
+            <i class="fa-solid ${icon}" style="color:${color};width:16px;font-size:13px;"></i>
+            <span style="flex:1;color:${i < p.current ? '#6B7280' : i === p.current ? '#111827' : '#9CA3AF'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(f.name)}</span>
+            <span style="font-size:11px;color:#94A3B8;">${i < p.current ? 'Done' : i === p.current ? 'Uploading…' : 'Waiting'}</span>
+        </div>`;
+    }).join('');
+
+    return `<div class="fade-in" style="max-width:480px;margin:60px auto;">
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:32px;box-shadow:0 4px 20px rgba(0,0,0,0.06);">
+            <div style="text-align:center;margin-bottom:24px;">
+                <div style="width:72px;height:72px;margin:0 auto 16px;position:relative;">
+                    <svg viewBox="0 0 72 72" style="width:72px;height:72px;transform:rotate(-90deg);">
+                        <circle cx="36" cy="36" r="30" fill="none" stroke="#F1F5F9" stroke-width="6"/>
+                        <circle cx="36" cy="36" r="30" fill="none" stroke="#F97316" stroke-width="6"
+                            stroke-dasharray="${2 * Math.PI * 30}"
+                            stroke-dashoffset="${2 * Math.PI * 30 * (1 - pct / 100)}"
+                            style="transition:stroke-dashoffset 0.5s ease;"/>
+                    </svg>
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#F97316;">${pct}%</div>
+                </div>
+                <div style="font-size:17px;font-weight:700;color:#111827;margin-bottom:4px;">
+                    Uploading receipts…
+                </div>
+                <div style="font-size:13px;color:#6B7280;">
+                    File ${Math.min(p.current + 1, p.total)} of ${p.total}
+                </div>
+            </div>
+
+            <!-- Countdown -->
+            <div style="background:${secs <= 5 ? '#FFF7ED' : '#F0FDF4'};border:1px solid ${secs <= 5 ? '#FED7AA' : '#BBF7D0'};border-radius:10px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px;">
+                <i class="fa-solid fa-clock" style="font-size:18px;color:${secs <= 5 ? '#F97316' : '#059669'};"></i>
+                <div>
+                    <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;">Keep this tab open</div>
+                    <div style="font-size:22px;font-weight:800;color:${secs <= 5 ? '#EA580C' : '#059669'};font-variant-numeric:tabular-nums;line-height:1.2;">${timeStr}</div>
+                </div>
+                <div style="margin-left:auto;font-size:11.5px;color:#6B7280;text-align:right;max-width:140px;line-height:1.4;">
+                    Closing this tab now will lose<br>files not yet uploaded.
+                </div>
+            </div>
+
+            <!-- File list -->
+            <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:8px 12px;">
+                ${fileRows}
+            </div>
+
+            <!-- Progress bar -->
+            <div class="progress-track" style="margin-top:16px;">
+                <div class="progress-fill ${pct < 100 ? 'active' : ''}" style="width:${pct}%;background:linear-gradient(90deg,#F97316,#EA580C);"></div>
+            </div>
+            <div style="text-align:center;margin-top:8px;font-size:11.5px;color:#94A3B8;">
+                ${pct < 100 ? 'Once uploaded, processing continues automatically in the background.' : 'All files uploaded! Redirecting…'}
             </div>
         </div>
     </div>`;
@@ -2084,13 +2156,28 @@ function startFileQueue(files) {
 async function queueUploadFiles(files) {
     if (!sb || !currentUser) { toast('Not signed in', 'error'); return; }
 
+    const SECS_PER_FILE = 7;
+    state.uploadProgress = { total: files.length, current: 0, secsLeft: files.length * SECS_PER_FILE, files };
+    state.view = 'upload';
+    render();
+
+    // Countdown timer — ticks every second
+    const timerInterval = setInterval(() => {
+        if (!state.uploadProgress) { clearInterval(timerInterval); return; }
+        state.uploadProgress.secsLeft = Math.max(0, state.uploadProgress.secsLeft - 1);
+        if (state.view === 'upload') render();
+    }, 1000);
+
     const queueIds = [];
     let failed = 0;
 
     // Upload ONE FILE AT A TIME — Supabase free tier drops concurrent uploads silently
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        toast(`Uploading ${i + 1} of ${files.length}: ${file.name}…`, 'info', 6000);
+        state.uploadProgress.current = i;
+        // Reset time estimate for remaining files
+        state.uploadProgress.secsLeft = Math.max(state.uploadProgress.secsLeft, (files.length - i) * SECS_PER_FILE);
+        render();
         try {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
             const path = `${currentUser.id}/${Date.now()}_${i}_${safeName}`;
@@ -2138,6 +2225,9 @@ async function queueUploadFiles(files) {
         }
     }
 
+    clearInterval(timerInterval);
+    state.uploadProgress = null;
+
     if (queueIds.length > 0) {
         const msg = failed > 0
             ? `${queueIds.length} queued, ${failed} failed — check console for details`
@@ -2148,6 +2238,7 @@ async function queueUploadFiles(files) {
         processQueueSequentially(queueIds);
     } else if (failed > 0) {
         toast(`All ${failed} uploads failed — open browser console (F12) for details`, 'error', 8000);
+        navigate('upload');
     }
 }
 
