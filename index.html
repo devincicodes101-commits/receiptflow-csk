@@ -2628,7 +2628,7 @@ function reviewQueueHTML() {
                 <div style="height:5px;background:#F1F5F9;border-radius:3px;overflow:hidden;margin-bottom:5px;">
                     <div style="height:100%;background:${barColor};border-radius:3px;transition:width 0.4s ease;width:${progressPct}%;"></div>
                 </div>
-                ${processingCount > 0 ? `<div style="font-size:10.5px;color:#F97316;"><i class="fa-solid fa-spinner fa-spin" style="font-size:9px;margin-right:3px;"></i>Processing ${processingCount} receipt${processingCount>1?'s'}…</div>` : ''}
+                ${processingCount > 0 ? `<div style="font-size:10.5px;color:#F97316;"><i class="fa-solid fa-spinner fa-spin" style="font-size:9px;margin-right:3px;"></i>Processing ${processingCount} receipt${processingCount>1?'s':''}…</div>` : ''}
                 ${pendingCount > 0 && processingCount === 0 ? `<div style="font-size:10.5px;color:#94A3B8;"><i class="fa-regular fa-clock" style="font-size:9px;margin-right:3px;"></i>${pendingCount} waiting to process…</div>` : ''}
                 ` : ''}
             </div>
