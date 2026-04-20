@@ -270,6 +270,10 @@
             <div class="nav-item active" data-view="upload" onclick="navigate('upload')">
                 <i class="fa-solid fa-cloud-arrow-up" style="color:inherit;"></i>Upload Receipt
             </div>
+            <div class="nav-item" data-view="review-queue" onclick="navigate('review-queue')">
+                <i class="fa-solid fa-inbox" style="color:#34D399;"></i>Review Queue
+                <span class="nav-badge" id="review-badge" style="display:none;">0</span>
+            </div>
             <div class="nav-item" data-view="history" onclick="navigate('history')">
                 <i class="fa-solid fa-clock-rotate-left" style="color:#93C5FD;"></i>History
             </div>
@@ -468,6 +472,7 @@ async function showApp() {
     const sidebarAvatar = document.getElementById('sidebar-avatar');
     if (sidebarAvatar && currentUser?.email) sidebarAvatar.textContent = currentUser.email[0].toUpperCase();
     await loadReceiptsFromSupabase();
+    await loadReviewQueue();
     checkHealth();
     updateBadge();
     render();
@@ -571,6 +576,10 @@ let state = {
     editingJobId: null,
     postingToJobber: false,
     selectedHistoryId: null,
+    reviewItems: [],
+    selectedQueueItemId: null,
+    savingQueueItem: false,
+    postingQueueItem: false,
     settings: {
         requireConfirm: true,
         category: 'Materials'
@@ -674,7 +683,7 @@ function navigate(view) {
     const titles = {
         upload: 'Upload Receipt', history: 'Processing History',
         errors: 'Error Queue', settings: 'Settings', review: 'Review Receipt',
-        gmail: 'Gmail Receipts'
+        gmail: 'Gmail Receipts', 'review-queue': 'Review Queue'
     };
     const bc = document.getElementById('breadcrumb');
     if (view === 'review') {
@@ -690,16 +699,19 @@ function render() {
     const el = document.getElementById('content');
     if (!el) return;
     const isHistory = state.view === 'history';
-    el.style.padding = isHistory ? '0' : '28px';
-    el.style.overflowY = isHistory ? 'hidden' : 'auto';
-    el.style.background = isHistory ? '#fff' : 'linear-gradient(135deg, rgba(255,247,237,0.25) 0%, #F8FAFC 45%, rgba(239,246,255,0.2) 100%)';
+    const isRQ = state.view === 'review-queue';
+    el.style.padding = (isHistory || isRQ) ? '0' : '28px';
+    el.style.overflowY = (isHistory || isRQ) ? 'hidden' : 'auto';
+    el.style.background = (isHistory || isRQ) ? '#fff' : 'linear-gradient(135deg, rgba(255,247,237,0.25) 0%, #F8FAFC 45%, rgba(239,246,255,0.2) 100%)';
     if (state.view === 'upload') el.innerHTML = state.uploading ? uploadingHTML() : uploadHTML();
     else if (state.view === 'review') el.innerHTML = reviewHTML();
     else if (state.view === 'history') el.innerHTML = historyHTML();
     else if (state.view === 'errors') el.innerHTML = errorsHTML();
     else if (state.view === 'settings') el.innerHTML = settingsHTML();
     else if (state.view === 'gmail') { el.innerHTML = gmailHTML(); loadGmailReceipts(); }
+    else if (state.view === 'review-queue') { el.innerHTML = reviewQueueHTML(); startQueuePolling(); }
     bind();
+    if (state.view !== 'review-queue') stopQueuePolling();
 }
 
 /* ── Upload View ── */
@@ -780,11 +792,11 @@ function uploadHTML() {
                     </div>
                 </div>
                 <div style="font-size:15px;font-weight:600;color:#0F172A;margin-bottom:4px;">Drop receipts here</div>
-                <div style="font-size:13px;color:#64748B;margin-bottom:20px;">or click to browse — up to 3 files at once</div>
+                <div style="font-size:13px;color:#64748B;margin-bottom:20px;">or click to browse — any number of files</div>
                 <button class="btn btn-primary" style="padding:9px 22px;font-size:13.5px;" onclick="event.stopPropagation();document.getElementById('file-input').click()">
                     <i class="fa-solid fa-folder-open" style="font-size:12px;"></i> Choose Files
                 </button>
-                <div style="margin-top:16px;font-size:11px;color:#94A3B8;letter-spacing:0.02em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; Up to 3 files</div>
+                <div style="margin-top:16px;font-size:11px;color:#94A3B8;letter-spacing:0.02em;">JPG · PNG · WEBP · PDF &nbsp;·&nbsp; No file limit</div>
             </div>
         </div>
 
@@ -795,7 +807,7 @@ function uploadHTML() {
             </div>
             <div>
                 <div style="font-size:12px;font-weight:700;color:#3730A3;margin-bottom:2px;">Pro tip</div>
-                <div style="font-size:12px;color:#4338CA;line-height:1.5;">Upload up to 3 receipts at once — ReceiptFlow processes them one by one and lets you review each before syncing to Jobber.</div>
+                <div style="font-size:12px;color:#4338CA;line-height:1.5;">Upload any number of receipts — they're queued instantly and processed in the background. Review extracted details in the <b>Review Queue</b> section when ready.</div>
             </div>
         </div>
 
@@ -2064,19 +2076,60 @@ function applyExtractResult(json) {
 
 function startFileQueue(files) {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
-    const valid = files.filter(f => allowed.includes(f.type)).slice(0, 3);
+    const valid = files.filter(f => allowed.includes(f.type));
     if (!valid.length) { toast('Please upload JPG, PNG, WEBP, or PDF files', 'error'); return; }
-    if (files.length > 3) toast('Only the first 3 files will be processed', 'info', 4000);
-    state.fileQueue = valid;
-    state.queueIndex = 0;
-    processNextInQueue();
+    queueUploadFiles(valid);
+}
+
+async function queueUploadFiles(files) {
+    if (!sb || !currentUser) { toast('Not signed in', 'error'); return; }
+
+    toast(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} to queue…`, 'info');
+
+    let queued = 0;
+    for (const file of files) {
+        try {
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const path = `manual/${currentUser.id}/${Date.now()}_${safeName}`;
+
+            const { error: upErr } = await sb.storage
+                .from('receipts')
+                .upload(path, file, { contentType: file.type, upsert: false });
+            if (upErr) { toast(`Upload failed for ${file.name}: ${upErr.message}`, 'error'); continue; }
+
+            const { data: urlData, error: urlErr } = await sb.storage
+                .from('receipts')
+                .createSignedUrl(path, 31536000);
+            if (urlErr || !urlData?.signedUrl) { toast(`Could not get URL for ${file.name}`, 'error'); continue; }
+
+            const fileType = file.type === 'application/pdf' ? 'pdf' : 'img';
+            const { error: insertErr } = await sb.from('upload_queue').insert({
+                user_id: currentUser.id,
+                file_name: file.name,
+                file_url: urlData.signedUrl,
+                file_type: fileType,
+                status: 'pending'
+            });
+            if (insertErr) { toast(`DB insert failed for ${file.name}: ${insertErr.message}`, 'error'); continue; }
+            queued++;
+        } catch (e) {
+            toast(`Error queuing ${file.name}: ${e.message}`, 'error');
+        }
+    }
+
+    if (queued > 0) {
+        toast(`${queued} receipt${queued > 1 ? 's' : ''} queued — processing in background`, 'success', 5000);
+        // Kick off background processing (fire-and-forget)
+        authedFetch(API_BASE + '/api/process-queue', { method: 'POST' }).catch(() => {});
+        // Update badge and navigate to review queue
+        await loadReviewQueue();
+        navigate('review-queue');
+    }
 }
 
 async function processNextInQueue() {
     const file = state.fileQueue[state.queueIndex];
     if (!file) return;
-    if (state.fileQueue.length > 1)
-        toast(`Processing receipt ${state.queueIndex + 1} of ${state.fileQueue.length}…`, 'info');
     await handleFile(file);
 }
 
@@ -2176,6 +2229,383 @@ async function handleLargeFile(file) {
         render();
         toast('Error: ' + (err.message || 'Could not process PDF'), 'error', 5000);
         console.error(err);
+    }
+}
+
+/* ── Review Queue ── */
+let _queuePollTimer = null;
+
+function stopQueuePolling() {
+    if (_queuePollTimer) { clearInterval(_queuePollTimer); _queuePollTimer = null; }
+}
+
+function startQueuePolling() {
+    stopQueuePolling();
+    loadReviewQueue();
+    _queuePollTimer = setInterval(async () => {
+        await loadReviewQueue();
+        if (state.view === 'review-queue') render();
+    }, 5000);
+}
+
+async function loadReviewQueue() {
+    if (!sb || !currentUser) return;
+    try {
+        const { data } = await sb.from('upload_queue')
+            .select('*')
+            .eq('user_id', currentUser.id)
+            .not('status', 'in', '("reviewed","discarded")')
+            .order('created_at', { ascending: false });
+        state.reviewItems = data || [];
+        updateReviewBadge();
+    } catch (e) {
+        console.warn('[review-queue] load error:', e.message);
+    }
+}
+
+function updateReviewBadge() {
+    const count = state.reviewItems.filter(r => r.status === 'done').length;
+    const b = document.getElementById('review-badge');
+    if (!b) return;
+    b.textContent = count;
+    b.style.display = count > 0 ? 'inline' : 'none';
+}
+
+function reviewQueueHTML() {
+    const items = state.reviewItems;
+    if (!state.selectedQueueItemId && items.length > 0) {
+        state.selectedQueueItemId = items[0].id;
+    }
+    const sel = items.find(i => i.id === state.selectedQueueItemId) || null;
+
+    const statusBadge = (s) => {
+        if (s === 'done')       return `<span class="badge badge-posted"><span class="badge-dot"></span>Ready</span>`;
+        if (s === 'processing') return `<span class="badge badge-processing"><span class="badge-dot"></span>Processing</span>`;
+        if (s === 'failed')     return `<span class="badge badge-error"><span class="badge-dot"></span>Failed</span>`;
+        return `<span class="badge" style="background:#F1F5F9;color:#64748B;"><span class="badge-dot" style="background:#94A3B8;"></span>Queued</span>`;
+    };
+
+    const listRows = items.map(item => {
+        const isSel = item.id === state.selectedQueueItemId;
+        const isPdf = item.file_type === 'pdf';
+        const ts = item.created_at ? new Date(item.created_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : '';
+        return `<div onclick="selectQueueItem('${item.id}')" style="padding:11px 14px 11px ${isSel?'11px':'14px'};cursor:pointer;
+            border-left:3px solid ${isSel?'#F97316':'transparent'};
+            background:${isSel?'#FFF5F0':'#fff'};border-bottom:1px solid #F1F5F9;
+            display:flex;align-items:center;gap:10px;user-select:none;">
+            <div style="width:32px;height:36px;border-radius:6px;flex-shrink:0;
+                background:${isPdf?'#FFF7ED':'#EFF6FF'};border:1px solid ${isPdf?'#FED7AA':'#BFDBFE'};
+                display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">
+                <i class="fa-solid ${isPdf?'fa-file-pdf':'fa-file-image'}" style="font-size:12px;color:${isPdf?'#F97316':'#3B82F6'};"></i>
+                <span style="font-size:7.5px;font-weight:700;color:${isPdf?'#F97316':'#3B82F6'};letter-spacing:0.04em;">${(item.file_type||'').toUpperCase()}</span>
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:600;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(item.file_name||'Receipt')}</div>
+                <div style="font-size:11px;color:#94A3B8;margin-bottom:4px;">${ts}</div>
+                ${statusBadge(item.status)}
+            </div>
+            ${item.amount ? `<div style="font-size:13px;font-weight:700;color:#0F172A;flex-shrink:0;">${fmt(item.amount)}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    const emptyList = `<div style="padding:40px 20px;text-align:center;color:#94A3B8;">
+        <i class="fa-solid fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i>
+        <div style="font-size:13px;">No receipts in queue</div>
+        <div style="font-size:12px;margin-top:4px;">Upload receipts to get started</div>
+    </div>`;
+
+    let detailPanel = '';
+    if (!sel) {
+        detailPanel = `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:#94A3B8;">
+            <div style="text-align:center;">
+                <i class="fa-solid fa-arrow-left" style="font-size:24px;margin-bottom:12px;display:block;"></i>
+                <div style="font-size:14px;">Select a receipt to review</div>
+            </div>
+        </div>`;
+    } else if (sel.status === 'pending' || sel.status === 'processing') {
+        detailPanel = `<div style="flex:1;display:flex;align-items:center;justify-content:center;">
+            <div style="text-align:center;">
+                <div class="spinner" style="margin:0 auto 20px;"></div>
+                <div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:6px;">Processing your receipt…</div>
+                <div style="font-size:13px;color:#6B7280;">Gemini is reading and extracting all details.<br>You can close this tab — it'll be ready when you return.</div>
+            </div>
+        </div>`;
+    } else if (sel.status === 'failed') {
+        detailPanel = `<div style="flex:1;padding:32px;max-width:520px;">
+            <div style="background:#FFF1F2;border:1px solid #FECDD3;border-radius:12px;padding:24px;text-align:center;">
+                <i class="fa-solid fa-circle-xmark" style="font-size:36px;color:#E11D48;margin-bottom:12px;display:block;"></i>
+                <div style="font-size:15px;font-weight:700;color:#BE123C;margin-bottom:8px;">Processing Failed</div>
+                <div style="font-size:13px;color:#9F1239;margin-bottom:20px;">${escHtml(sel.error || 'An unexpected error occurred')}</div>
+                <button class="btn btn-danger" onclick="queueDiscard('${sel.id}')">
+                    <i class="fa-solid fa-trash" style="font-size:11px;"></i> Remove from Queue
+                </button>
+            </div>
+        </div>`;
+    } else if (sel.status === 'done') {
+        const jobClass = sel.job_no ? 'job-input-valid' : 'job-input-missing';
+        const jobIcon = sel.job_no
+            ? '<i class="fa-solid fa-circle-check" style="color:#059669;font-size:15px;"></i>'
+            : '<i class="fa-solid fa-circle-xmark" style="color:#DC2626;font-size:15px;"></i>';
+        const postingLabel = state.postingQueueItem
+            ? '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Posting...'
+            : '<i class="fa-solid fa-paper-plane" style="font-size:12px;"></i> Post to Jobber';
+        const savingLabel = state.savingQueueItem
+            ? '<i class="fa-solid fa-spinner fa-spin" style="font-size:12px;"></i> Saving...'
+            : '<i class="fa-solid fa-floppy-disk" style="font-size:12px;"></i> Save Only';
+        const isPdf = sel.file_type === 'pdf';
+
+        detailPanel = `<div style="flex:1;padding:24px;overflow-y:auto;">
+            <div style="display:flex;gap:22px;max-width:960px;">
+                <!-- Preview -->
+                <div style="width:320px;flex-shrink:0;">
+                    <div class="receipt-img-wrap" style="height:440px;">
+                        ${isPdf
+                            ? `<div style="text-align:center;padding:40px 20px;">
+                                 <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
+                                 <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
+                                 <div style="font-size:11.5px;color:#9CA3AF;">Text extracted by Gemini Vision</div>
+                               </div>`
+                            : `<img src="${escHtml(sel.file_url||'')}" alt="Receipt"
+                                   onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9CA3AF;font-size:13px;\\'>Preview unavailable</div>'">`
+                        }
+                    </div>
+                    <div style="margin-top:8px;text-align:center;font-size:11px;color:#9CA3AF;">
+                        <i class="fa-regular fa-${isPdf?'file-pdf':'image'}" style="margin-right:4px;"></i>
+                        ${escHtml(sel.file_name||'')}
+                    </div>
+                </div>
+                <!-- Fields -->
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:16px;">Extracted Receipt Details</div>
+                    <div class="form-grid-2">
+                        <div>
+                            <label class="form-label">Vendor / Store</label>
+                            <input class="form-input" id="rq-vendor" value="${escHtml(sel.vendor||'')}">
+                        </div>
+                        <div>
+                            <label class="form-label">Invoice / Receipt Number</label>
+                            <input class="form-input" id="rq-invoice" value="${escHtml(sel.invoice_no||'')}">
+                        </div>
+                        <div>
+                            <label class="form-label">Invoice Date</label>
+                            <input class="form-input" type="date" id="rq-date" value="${escHtml(sel.date||'')}">
+                        </div>
+                        <div>
+                            <label class="form-label">Total Amount</label>
+                            <input class="form-input" id="rq-total" value="${escHtml(String(sel.amount||''))}">
+                        </div>
+                    </div>
+                    <!-- Line Items -->
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label">Line Items</label>
+                        <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;">
+                            <table class="data-table" style="font-size:12.5px;">
+                                <thead><tr>
+                                    <th style="padding:7px 10px;">Description</th>
+                                    <th style="padding:7px 10px;width:50px;text-align:center;">Qty</th>
+                                    <th style="padding:7px 10px;width:80px;text-align:right;">Unit</th>
+                                    <th style="padding:7px 10px;width:80px;text-align:right;">Total</th>
+                                </tr></thead>
+                                <tbody>
+                                ${(sel.items||[]).length > 0
+                                    ? (sel.items||[]).map(i => `<tr>
+                                        <td style="padding:7px 10px;">${escHtml(i.desc||'—')}</td>
+                                        <td style="padding:7px 10px;text-align:center;color:#6B7280;">${i.qty!=null?i.qty:'—'}</td>
+                                        <td style="padding:7px 10px;text-align:right;color:#6B7280;">${i.unit!=null?fmt(i.unit):'—'}</td>
+                                        <td style="padding:7px 10px;text-align:right;font-weight:600;">${fmt(i.total)}</td>
+                                      </tr>`).join('')
+                                    : '<tr><td colspan="4" style="padding:12px 10px;text-align:center;color:#9CA3AF;font-size:12px;">No line items detected</td></tr>'
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- Job Number -->
+                    <div style="margin-bottom:20px;">
+                        <label class="form-label">Job Number <span style="font-weight:400;color:#9CA3AF;">(from PO field on receipt)</span></label>
+                        <div style="position:relative;">
+                            <input class="form-input ${jobClass}" id="rq-jobno" value="${escHtml(sel.job_no||'')}" placeholder="e.g. 1408" style="padding-right:38px;">
+                            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);">${jobIcon}</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label">Expense Category</label>
+                        <select class="form-input" id="rq-category">
+                            <option ${state.settings.category==='Materials'?'selected':''}>Materials</option>
+                            <option ${state.settings.category==='Fuel'?'selected':''}>Fuel</option>
+                            <option ${state.settings.category==='Supplies'?'selected':''}>Supplies</option>
+                            <option ${state.settings.category==='Tools'?'selected':''}>Tools</option>
+                            <option ${state.settings.category==='Other'?'selected':''}>Other</option>
+                        </select>
+                    </div>
+                    <!-- Actions -->
+                    <div class="action-bar">
+                        <button class="btn btn-jobber" id="rq-btn-jobber" ${state.postingQueueItem?'disabled':''} onclick="queuePostToJobber('${sel.id}')">
+                            ${postingLabel}
+                        </button>
+                        <button class="btn btn-primary" id="rq-btn-save" ${state.savingQueueItem?'disabled':''} onclick="queueSave('${sel.id}')">
+                            ${savingLabel}
+                        </button>
+                        <button class="btn btn-ghost" onclick="queueDiscard('${sel.id}')" style="margin-left:auto;">
+                            <i class="fa-solid fa-xmark" style="font-size:11px;"></i> Discard
+                        </button>
+                    </div>
+                    <div style="margin-top:8px;font-size:11.5px;color:#9CA3AF;">
+                        <i class="fa-solid fa-info-circle" style="margin-right:3px;"></i>
+                        "Post to Jobber" creates an expense on the matching job. "Save Only" saves to history. "Discard" removes from queue.
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    return `<div style="display:flex;height:100%;overflow:hidden;">
+        <!-- List panel -->
+        <div style="width:320px;min-width:320px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
+            <div style="padding:14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+                    <div style="font-size:14px;font-weight:700;color:#0F172A;">Review Queue</div>
+                    <div style="font-size:11.5px;color:#94A3B8;">${items.length} item${items.length!==1?'s':''}</div>
+                </div>
+                <div style="font-size:11.5px;color:#94A3B8;">Upload receipts to process them in the background</div>
+            </div>
+            <div style="overflow-y:auto;flex:1;">${items.length ? listRows : emptyList}</div>
+        </div>
+        <!-- Detail panel -->
+        ${detailPanel}
+    </div>`;
+}
+
+function selectQueueItem(id) {
+    state.selectedQueueItemId = id;
+    state.savingQueueItem = false;
+    state.postingQueueItem = false;
+    render();
+}
+
+async function queueSave(id) {
+    if (state.savingQueueItem) return;
+    const item = state.reviewItems.find(i => i.id === id);
+    if (!item) return;
+
+    const vendor = document.getElementById('rq-vendor')?.value || item.vendor;
+    const invoice = document.getElementById('rq-invoice')?.value || item.invoice_no;
+    const date = document.getElementById('rq-date')?.value || item.date;
+    const total = document.getElementById('rq-total')?.value || String(item.amount);
+    const jobNo = document.getElementById('rq-jobno')?.value?.trim() || item.job_no;
+    const category = document.getElementById('rq-category')?.value || state.settings.category;
+
+    state.savingQueueItem = true;
+    render();
+
+    try {
+        const now = new Date();
+        const savedAt = now.toLocaleDateString('en-US', { month:'short', day:'numeric' }) + ', ' +
+            now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+        const rec = {
+            id: genId(),
+            vendor, date,
+            amount: parseFloat(total) || 0,
+            jobNo: jobNo || null,
+            status: 'posted',
+            invoiceNo: invoice,
+            category, savedAt,
+            total,
+            items: item.items || [],
+            receiptBlobUrl: item.file_url || null
+        };
+        state.history.unshift(rec);
+        updateBadge();
+        await upsertReceipt(rec);
+
+        await sb.from('upload_queue').update({ status: 'reviewed', receipt_id: rec.id }).eq('id', id);
+        state.reviewItems = state.reviewItems.filter(i => i.id !== id);
+        state.selectedQueueItemId = state.reviewItems.length > 0 ? state.reviewItems[0].id : null;
+        updateReviewBadge();
+        toast('Receipt saved to history', 'success');
+    } catch (e) {
+        toast('Save failed: ' + e.message, 'error');
+    } finally {
+        state.savingQueueItem = false;
+        render();
+    }
+}
+
+async function queuePostToJobber(id) {
+    if (state.postingQueueItem) return;
+    const item = state.reviewItems.find(i => i.id === id);
+    if (!item) return;
+
+    const vendor = document.getElementById('rq-vendor')?.value || item.vendor;
+    const invoice = document.getElementById('rq-invoice')?.value || item.invoice_no;
+    const date = document.getElementById('rq-date')?.value || item.date;
+    const total = document.getElementById('rq-total')?.value || String(item.amount);
+    const jobNo = document.getElementById('rq-jobno')?.value?.trim() || item.job_no;
+    const category = document.getElementById('rq-category')?.value || state.settings.category;
+
+    if (!jobNo) {
+        toast('Enter a job number before posting to Jobber', 'warning');
+        document.getElementById('rq-jobno')?.focus();
+        return;
+    }
+
+    state.postingQueueItem = true;
+    render();
+
+    try {
+        const expRes = await authedFetch(API_BASE + '/api/create-expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor, invoiceNo: invoice, date, total, jobNo, category, receiptBlobUrl: item.file_url || null })
+        });
+        const expData = await expRes.json();
+        if (!expRes.ok || (!expData.success && !expData.expenseId)) {
+            throw new Error(expData.error || 'Failed to create expense in Jobber');
+        }
+
+        const now = new Date();
+        const savedAt = now.toLocaleDateString('en-US', { month:'short', day:'numeric' }) + ', ' +
+            now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+        const rec = {
+            id: genId(),
+            vendor, date,
+            amount: parseFloat(total) || 0,
+            jobNo,
+            status: 'jobber',
+            invoiceNo: invoice,
+            category, savedAt,
+            total,
+            items: item.items || [],
+            receiptBlobUrl: item.file_url || null,
+            jobberExpenseId: expData.expenseId || 'created'
+        };
+        state.history.unshift(rec);
+        updateBadge();
+        await upsertReceipt(rec);
+
+        await sb.from('upload_queue').update({ status: 'reviewed', receipt_id: rec.id }).eq('id', id);
+        state.reviewItems = state.reviewItems.filter(i => i.id !== id);
+        state.selectedQueueItemId = state.reviewItems.length > 0 ? state.reviewItems[0].id : null;
+        updateReviewBadge();
+        toast('Posted to Jobber!', 'success');
+    } catch (e) {
+        toast('Jobber error: ' + e.message, 'error', 6000);
+    } finally {
+        state.postingQueueItem = false;
+        render();
+    }
+}
+
+async function queueDiscard(id) {
+    try {
+        await sb.from('upload_queue').update({ status: 'discarded' }).eq('id', id);
+        state.reviewItems = state.reviewItems.filter(i => i.id !== id);
+        state.selectedQueueItemId = state.reviewItems.length > 0 ? state.reviewItems[0].id : null;
+        updateReviewBadge();
+        toast('Removed from queue', 'info');
+        render();
+    } catch (e) {
+        toast('Error: ' + e.message, 'error');
     }
 }
 

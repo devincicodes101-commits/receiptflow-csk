@@ -205,6 +205,102 @@ async function processOneRow(sb, incoming) {
   }
 }
 
+// ── Process manual upload queue (queue-based, no auto-post) ──
+async function processOneQueueRow(sb, row) {
+  const rowId = row.id;
+  const markFailed = async (errorMsg) => {
+    console.error(`[process-queue] ${rowId}: failed — ${errorMsg}`);
+    await sb.from('upload_queue').update({
+      status: 'failed', error: errorMsg, processed_at: new Date().toISOString()
+    }).eq('id', rowId);
+    return { id: rowId, success: false, error: errorMsg };
+  };
+
+  try {
+    const fileRes = await fetch(row.file_url);
+    if (!fileRes.ok) return markFailed(`Could not download file: HTTP ${fileRes.status}`);
+    const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+    const mimeType = getMimeType(row.file_name);
+
+    console.log(`[process-queue] ${rowId}: downloaded ${fileBuffer.length} bytes, mime=${mimeType}`);
+
+    const geminiOutput = await parseWithGemini(fileBuffer, mimeType);
+    const fields = extractFieldsFromLlama(geminiOutput);
+    console.log(`[process-queue] ${rowId}: fields=`, JSON.stringify(fields));
+
+    await sb.from('upload_queue').update({
+      status: 'done',
+      vendor: fields.vendor || null,
+      invoice_no: fields.invoiceNo || null,
+      date: fields.date || null,
+      amount: parseFloat(fields.total) || 0,
+      job_no: fields.jobNo || null,
+      items: fields.items || [],
+      error: null,
+      processed_at: new Date().toISOString()
+    }).eq('id', rowId);
+
+    return { id: rowId, success: true };
+  } catch (err) {
+    console.error(`[process-queue] ${rowId}: unhandled error:`, err);
+    return markFailed(err.message || 'Unknown error');
+  }
+}
+
+app.all('/api/process-queue', async (req, res) => {
+  const secret = (process.env.PROCESS_SECRET || '').trim();
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  const provided = (req.headers['x-process-secret'] || '').trim();
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+
+  const validSecret = secret && provided === secret;
+  const validCron = cronSecret && bearer === cronSecret;
+  const noAuthConfigured = !secret && !cronSecret;
+
+  if (!noAuthConfigured && !validSecret && !validCron) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const sb = await getSupabaseAdmin();
+
+  await sb.from('upload_queue')
+    .update({ status: 'pending', error: null })
+    .eq('status', 'processing');
+
+  const { data: pending, error: selectErr } = await sb
+    .from('upload_queue')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+
+  if (selectErr) return res.status(500).json({ error: selectErr.message });
+  if (!pending || pending.length === 0) return res.json({ success: true, message: 'No pending items' });
+
+  console.log(`[process-queue] ${pending.length} item(s) to process`);
+
+  const results = [];
+  for (const row of pending) {
+    const { data: claimed } = await sb
+      .from('upload_queue')
+      .update({ status: 'processing' })
+      .eq('id', row.id)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (!claimed || claimed.length === 0) {
+      results.push({ id: row.id, skipped: true });
+      continue;
+    }
+
+    const result = await processOneQueueRow(sb, row);
+    results.push(result);
+  }
+
+  const done = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success && !r.skipped).length;
+  return res.json({ success: true, processed: pending.length, done, failed, results });
+});
+
 app.all('/api/process-incoming', async (req, res) => {
   // Accept either x-process-secret (n8n/GitHub Actions) or Vercel's auto cron Bearer token
   const secret = (process.env.PROCESS_SECRET || '').trim();
@@ -281,7 +377,7 @@ app.all('/api/process-incoming', async (req, res) => {
 
 // ── Auth middleware — verifies Supabase JWT ──
 app.use(async (req, res, next) => {
-  if (req.path === '/api/process-incoming') return next();
+  if (req.path === '/api/process-incoming' || req.path === '/api/process-queue') return next();
   const open = [
     '/api/config',
     '/api/health',
