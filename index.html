@@ -2090,7 +2090,7 @@ async function queueUploadFiles(files) {
     for (const file of files) {
         try {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const path = `manual/${currentUser.id}/${Date.now()}_${safeName}`;
+            const path = `${currentUser.id}/${Date.now()}_${safeName}`;
 
             const { error: upErr } = await sb.storage
                 .from('receipts')
