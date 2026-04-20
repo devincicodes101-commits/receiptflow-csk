@@ -2086,8 +2086,8 @@ async function queueUploadFiles(files) {
 
     toast(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} to queue…`, 'info');
 
-    const queueIds = [];
-    for (const file of files) {
+    // Upload ALL files in parallel so tab only needs to stay open ~4s total (not N×4s)
+    const results = await Promise.all(files.map(async (file) => {
         try {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
             const path = `${currentUser.id}/${Date.now()}_${safeName}`;
@@ -2095,12 +2095,12 @@ async function queueUploadFiles(files) {
             const { error: upErr } = await sb.storage
                 .from('receipts')
                 .upload(path, file, { contentType: file.type, upsert: false });
-            if (upErr) { toast(`Upload failed for ${file.name}: ${upErr.message}`, 'error'); continue; }
+            if (upErr) { toast(`Upload failed for ${file.name}: ${upErr.message}`, 'error'); return null; }
 
             const { data: urlData, error: urlErr } = await sb.storage
                 .from('receipts')
                 .createSignedUrl(path, 31536000);
-            if (urlErr || !urlData?.signedUrl) { toast(`Could not get URL for ${file.name}`, 'error'); continue; }
+            if (urlErr || !urlData?.signedUrl) { toast(`Could not get URL for ${file.name}`, 'error'); return null; }
 
             const fileType = file.type === 'application/pdf' ? 'pdf' : 'img';
             const qRes = await authedFetch(API_BASE + '/api/queue-upload', {
@@ -2109,18 +2109,21 @@ async function queueUploadFiles(files) {
                 body: JSON.stringify({ fileName: file.name, fileUrl: urlData.signedUrl, fileType })
             });
             const qData = await qRes.json();
-            if (!qRes.ok || !qData.success) { toast(`Queue insert failed for ${file.name}: ${qData.error || 'unknown'}`, 'error'); continue; }
-            queueIds.push(qData.id);
+            if (!qRes.ok || !qData.success) { toast(`Queue insert failed for ${file.name}: ${qData.error || 'unknown'}`, 'error'); return null; }
+            return qData.id;
         } catch (e) {
             toast(`Error queuing ${file.name}: ${e.message}`, 'error');
+            return null;
         }
-    }
+    }));
+
+    const queueIds = results.filter(Boolean);
 
     if (queueIds.length > 0) {
         toast(`${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — processing in background`, 'success', 5000);
         await loadReviewQueue();
         navigate('review-queue');
-        // Process sequentially in background (one at a time to avoid Gemini rate limits)
+        // Process sequentially (one at a time) to avoid Gemini rate limits
         processQueueSequentially(queueIds);
     }
 }
