@@ -263,42 +263,42 @@ app.all('/api/process-queue', async (req, res) => {
 
   const sb = await getSupabaseAdmin();
 
+  // Reset stuck 'processing' rows back to pending
   await sb.from('upload_queue')
     .update({ status: 'pending', error: null })
     .eq('status', 'processing');
 
+  // Only fetch ONE item — Vercel Hobby plan caps function runtime at 60s.
+  // GitHub Actions loops this endpoint until no pending items remain.
   const { data: pending, error: selectErr } = await sb
     .from('upload_queue')
     .select('*')
     .eq('status', 'pending')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .limit(1);
 
   if (selectErr) return res.status(500).json({ error: selectErr.message });
-  if (!pending || pending.length === 0) return res.json({ success: true, message: 'No pending items' });
+  if (!pending || pending.length === 0) return res.json({ success: true, pending: 0, message: 'No pending items' });
 
-  console.log(`[process-queue] ${pending.length} item(s) to process`);
+  const row = pending[0];
+  console.log(`[process-queue] processing 1 item: ${row.id}`);
 
-  const results = [];
-  for (const row of pending) {
-    const { data: claimed } = await sb
-      .from('upload_queue')
-      .update({ status: 'processing' })
-      .eq('id', row.id)
-      .eq('status', 'pending')
-      .select('id');
+  const { data: claimed } = await sb
+    .from('upload_queue')
+    .update({ status: 'processing' })
+    .eq('id', row.id)
+    .eq('status', 'pending')
+    .select('id');
 
-    if (!claimed || claimed.length === 0) {
-      results.push({ id: row.id, skipped: true });
-      continue;
-    }
-
-    const result = await processOneQueueRow(sb, row);
-    results.push(result);
+  if (!claimed || claimed.length === 0) {
+    return res.json({ success: true, pending: 0, message: 'Item already claimed' });
   }
 
-  const done = results.filter(r => r.success).length;
-  const failed = results.filter(r => !r.success && !r.skipped).length;
-  return res.json({ success: true, processed: pending.length, done, failed, results });
+  const result = await processOneQueueRow(sb, row);
+
+  // Check how many are still pending so the caller knows whether to loop
+  const { count } = await sb.from('upload_queue').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+  return res.json({ success: true, pending: count || 0, result });
 });
 
 app.all('/api/process-incoming', async (req, res) => {
