@@ -14,3 +14,9 @@ jobs:
           curl -s -X POST https://receiptflow-csk.vercel.app/api/process-incoming \
             -H "x-process-secret: ${{ secrets.PROCESS_SECRET }}" \
             -w "\nHTTP %{http_code}" | tail -20
+
+      - name: Process manual upload queue
+        run: |
+          curl -s -X POST https://receiptflow-csk.vercel.app/api/process-queue \
+            -H "x-process-secret: ${{ secrets.PROCESS_SECRET }}" \
+            -w "\nHTTP %{http_code}" | tail -20
