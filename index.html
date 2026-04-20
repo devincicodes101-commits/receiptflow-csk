@@ -570,6 +570,7 @@ let state = {
     queueIndex: 0,
     editingJobId: null,
     postingToJobber: false,
+    selectedHistoryId: null,
     settings: {
         requireConfirm: true,
         category: 'Materials'
@@ -688,6 +689,10 @@ function navigate(view) {
 function render() {
     const el = document.getElementById('content');
     if (!el) return;
+    const isHistory = state.view === 'history';
+    el.style.padding = isHistory ? '0' : '28px';
+    el.style.overflowY = isHistory ? 'hidden' : 'auto';
+    el.style.background = isHistory ? '#fff' : 'linear-gradient(135deg, rgba(255,247,237,0.25) 0%, #F8FAFC 45%, rgba(239,246,255,0.2) 100%)';
     if (state.view === 'upload') el.innerHTML = state.uploading ? uploadingHTML() : uploadHTML();
     else if (state.view === 'review') el.innerHTML = reviewHTML();
     else if (state.view === 'history') el.innerHTML = historyHTML();
@@ -1039,56 +1044,235 @@ function reviewHTML() {
 
 /* ── History View ── */
 function historyHTML() {
-    return `<div class="fade-in">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-            <div style="font-size:15px;font-weight:600;color:#0F172A;">All Receipts <span style="font-size:13px;font-weight:400;color:#94A3B8;margin-left:6px;">${state.history.length} total</span></div>
-            <div style="display:flex;gap:8px;">
-                <input class="form-input" placeholder="Search vendor or invoice..." style="width:220px;font-size:12.5px;" id="history-search">
-                <select class="form-input" style="width:130px;font-size:12.5px;" id="history-filter">
-                    <option value="all">All Status</option>
-                    <option value="jobber">In Jobber</option>
-                    <option value="posted">Saved</option>
-                    <option value="error">Error</option>
-                </select>
+    const data = state.history.length > 0 ? state.history : HISTORY_MOCK;
+    if (!state.selectedHistoryId || !data.find(r => r.id === state.selectedHistoryId)) {
+        state.selectedHistoryId = data.length > 0 ? data[0].id : null;
+    }
+    const selRec = data.find(r => r.id === state.selectedHistoryId) || null;
+
+    const listRows = data.map(r => {
+        const isSel = r.id === state.selectedHistoryId;
+        const isJobber = r.jobberExpenseId || r.status === 'jobber';
+        const bCls = isJobber ? 'badge-jobber' : r.status === 'posted' ? 'badge-posted' : r.status === 'error' ? 'badge-error' : 'badge-processing';
+        const bLbl = isJobber ? 'In Jobber' : r.status === 'posted' ? 'Saved' : r.status === 'error' ? 'Error' : 'Pending';
+        const ft = r.fileType || 'pdf';
+        const isPdf = ft === 'pdf';
+        return `<div class="history-row" data-id="${r.id}"
+            data-status="${isJobber ? 'jobber' : r.status}"
+            data-search="${(r.vendor||'').toLowerCase()} ${(r.invoiceNo||'').toLowerCase()} ${(r.id||'').toLowerCase()}"
+            onclick="selectHistoryReceipt('${r.id}')"
+            style="padding:11px 14px 11px ${isSel ? '11px' : '14px'};cursor:pointer;
+                   border-left:3px solid ${isSel ? '#F97316' : 'transparent'};
+                   background:${isSel ? '#FFF5F0' : '#fff'};border-bottom:1px solid #F1F5F9;
+                   display:flex;align-items:center;gap:10px;user-select:none;">
+            <div style="width:32px;height:36px;border-radius:6px;flex-shrink:0;
+                background:${isPdf ? '#FFF7ED' : '#EFF6FF'};
+                border:1px solid ${isPdf ? '#FED7AA' : '#BFDBFE'};
+                display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">
+                <i class="fa-solid ${isPdf ? 'fa-file-pdf' : 'fa-file-image'}"
+                   style="font-size:12px;color:${isPdf ? '#F97316' : '#3B82F6'};"></i>
+                <span style="font-size:7.5px;font-weight:700;color:${isPdf ? '#F97316' : '#3B82F6'};letter-spacing:0.04em;">${ft.toUpperCase()}</span>
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:baseline;gap:5px;margin-bottom:1px;">
+                    <span style="font-size:12px;font-weight:700;color:#0F172A;">${escHtml(r.id)}</span>
+                    <span style="font-size:11px;color:#64748B;font-weight:500;">${escHtml(r.vendor||'—')}</span>
+                </div>
+                <div style="font-size:11px;color:#94A3B8;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    ${escHtml(r.invoiceNo||'—')} &middot; ${fmtDate(r.date)}${r.jobNo ? ` &middot; <span style="color:#64748B;">Job ${escHtml(r.jobNo)}</span>` : ''}
+                </div>
+                <span class="badge ${bCls}" style="font-size:10px;padding:2px 7px;"><span class="badge-dot"></span>${bLbl}</span>
+            </div>
+            <div style="font-size:13px;font-weight:700;color:#0F172A;flex-shrink:0;">${fmt(r.amount)}</div>
+        </div>`;
+    }).join('');
+
+    return `<div style="display:flex;height:100%;overflow:hidden;">
+        <!-- List panel -->
+        <div style="width:340px;min-width:340px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
+            <div style="padding:14px 14px 12px;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;">
+                    <div style="font-size:14px;font-weight:700;color:#0F172A;">Processing history</div>
+                    <div style="font-size:11.5px;color:#94A3B8;">${data.length} receipts</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    <div style="position:relative;">
+                        <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:#94A3B8;pointer-events:none;"></i>
+                        <input class="form-input" id="history-search" placeholder="Search receipts..."
+                            style="font-size:12px;height:31px;padding:0 10px 0 28px;">
+                    </div>
+                    <select class="form-input" id="history-filter" style="font-size:12px;height:31px;padding:0 8px;">
+                        <option value="all">All Status</option>
+                        <option value="jobber">In Jobber</option>
+                        <option value="posted">Saved</option>
+                        <option value="error">Error</option>
+                    </select>
+                </div>
+            </div>
+            <div style="padding:6px 14px;background:#F8FAFC;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
+                <span style="font-size:10px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.07em;">Receipt</span>
+            </div>
+            <div id="history-list" style="overflow-y:auto;flex:1;">
+                ${listRows}
+                <div id="history-no-results" style="display:none;padding:40px 20px;text-align:center;color:#94A3B8;font-size:13px;">No receipts match your search</div>
             </div>
         </div>
-        ${state.history.length === 0
-            ? `<div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;text-align:center;padding:60px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
-                <i class="fa-solid fa-inbox" style="font-size:32px;color:#CBD5E1;margin-bottom:10px;display:block;"></i>
-                <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px;">No receipts yet</div>
-                <div style="font-size:13px;color:#94A3B8;">Upload a receipt to get started</div>
-               </div>`
-            : `<div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
-                <div class="table-wrap"><table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Receipt ID</th><th>Vendor</th><th>Date</th><th>Invoice</th>
-                            <th>Amount</th><th>Job #</th><th>Status</th><th>Saved At</th><th>Action</th><th></th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-tbody">
-                    ${state.history.map(r => {
-                        const shortId = (r.id || '').length > 20 ? (r.id || '').slice(0, 20) + '…' : (r.id || '');
-                        return `<tr data-status="${r.status}" data-search="${(r.vendor || '').toLowerCase()} ${(r.invoiceNo || '').toLowerCase()}">
-                        <td style="font-weight:500;color:#374151;font-family:monospace;font-size:11.5px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.id || '')}">${escHtml(shortId)}</td>
-                        <td style="font-weight:500;">${escHtml(r.vendor || '—')}</td>
-                        <td style="color:#6B7280;white-space:nowrap;font-size:12px;">${fmtDate(r.date)}</td>
-                        <td style="font-family:monospace;font-size:11.5px;color:#6B7280;">${escHtml(r.invoiceNo || '—')}</td>
-                        <td style="font-weight:600;font-variant-numeric:tabular-nums;">${fmt(r.amount)}</td>
-                        <td><span style="font-family:monospace;font-size:11.5px;color:${r.jobNo ? '#374151' : '#DC2626'};">${escHtml(r.jobNo || 'Not found')}</span></td>
-                        <td><span class="badge badge-${(r.jobberExpenseId || r.status === 'jobber') ? 'jobber' : r.status === 'posted' ? 'posted' : 'error'}">${(r.jobberExpenseId || r.status === 'jobber') ? 'In Jobber' : r.status === 'posted' ? 'Saved' : 'Error'}</span></td>
-                        <td style="color:#9CA3AF;font-size:11.5px;white-space:nowrap;">${r.savedAt || '—'}</td>
-                        <td>${(r.jobberExpenseId || r.status === 'jobber')
-                            ? '<span style="font-size:12px;color:#4338CA;font-weight:600;">&#10003; In Jobber</span>'
-                            : r.status === 'posted' ? `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${r.id}')">Post to Jobber</button>` : '—'
-                        }</td>
-                        <td><button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.id}')" title="Delete"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button></td>
-                    </tr>`;}).join('')}
-                    </tbody>
-                </table></div>
-               </div>`
-        }
+        <!-- Preview pane -->
+        <div id="history-preview-pane" style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#F8FAFC;min-width:0;">
+            ${selRec ? historyPreviewPaneHTML(selRec) : historyEmptyStateHTML()}
+        </div>
     </div>`;
+}
+
+function historyPreviewPaneHTML(rec) {
+    const isJobber = rec.jobberExpenseId || rec.status === 'jobber';
+    const bCls = isJobber ? 'badge-jobber' : rec.status === 'posted' ? 'badge-posted' : rec.status === 'error' ? 'badge-error' : 'badge-processing';
+    const bLbl = isJobber ? 'In Jobber' : rec.status === 'posted' ? 'Saved' : rec.status === 'error' ? 'Error' : 'Pending';
+    let actionBtn = '';
+    if (isJobber) {
+        actionBtn = `<span class="badge ${bCls}" style="padding:5px 12px;font-size:11.5px;"><span class="badge-dot"></span>In Jobber</span>`;
+    } else if (rec.status === 'posted') {
+        actionBtn = `<button class="btn btn-primary btn-sm" onclick="postFromHistory('${rec.id}')"><i class="fa-solid fa-paper-plane"></i> Post to Jobber</button>`;
+    } else if (rec.status === 'error') {
+        actionBtn = `<button class="btn btn-sm" style="border:1.5px solid #E11D48;color:#E11D48;background:#fff;" onclick="toast('Retrying...','info')"><i class="fa-solid fa-rotate-right"></i> Retry</button>`;
+    }
+    return `
+        <div style="padding:11px 18px;background:#fff;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                <code style="font-size:11.5px;color:#F97316;background:#FFF7ED;padding:3px 8px;border-radius:5px;font-weight:700;white-space:nowrap;">${escHtml(rec.id)}</code>
+                <span style="font-size:13px;font-weight:600;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(rec.vendor||'—')}</span>
+                <span style="color:#E2E8F0;">|</span>
+                <span style="font-size:12px;color:#64748B;white-space:nowrap;">${fmtDate(rec.date)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+                ${actionBtn}
+                <button class="btn btn-secondary btn-sm" onclick="deleteReceipt('${rec.id}')" title="Delete receipt"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>
+            </div>
+        </div>
+        <div style="flex:1;display:flex;overflow:hidden;">
+            ${historyDocHTML(rec)}
+            ${historyDetailPanelHTML(rec)}
+        </div>`;
+}
+
+function historyDocHTML(rec) {
+    const items = rec.items || [];
+    const itemRows = items.map(item => {
+        const tot = parseFloat(item.totalPrice) || (parseFloat(item.unitPrice||0) * parseFloat(item.qty||1));
+        return `<tr>
+            <td style="padding:6px 8px;font-size:11.5px;color:#374151;border-bottom:1px solid #F1F5F9;">${escHtml(item.description||item.desc||'')}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#64748B;border-bottom:1px solid #F1F5F9;text-align:center;">${escHtml(String(item.qty||''))}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#64748B;border-bottom:1px solid #F1F5F9;text-align:center;">${escHtml(item.unit||'')}</td>
+            <td style="padding:6px 8px;font-size:11.5px;color:#374151;border-bottom:1px solid #F1F5F9;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;">${fmt(tot)}</td>
+        </tr>`;
+    }).join('');
+    const subtotal = rec.amount / 1.05;
+    const gst = rec.amount - subtotal;
+    return `<div style="flex:1;overflow-y:auto;padding:20px;background:#F8FAFC;display:flex;justify-content:center;min-width:0;">
+        <div style="width:100%;max-width:500px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.05);flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid #F1F5F9;">
+                <div>
+                    <div style="font-size:17px;font-weight:800;color:#0F172A;letter-spacing:-0.02em;">${escHtml(rec.vendor||'VENDOR')}</div>
+                    <div style="font-size:11px;color:#64748B;margin-top:3px;line-height:1.5;">${escHtml(rec.address||'2440 Pegasus Rd NE, Calgary, AB T2E 8C3')}<br>Phone: (403) 250-4110</div>
+                </div>
+                <div style="font-size:18px;font-weight:800;color:#F97316;letter-spacing:0.04em;">INVOICE</div>
+            </div>
+            <div style="display:grid;grid-template-columns:90px 1fr;gap:4px 12px;margin-bottom:18px;font-size:12px;">
+                <span style="color:#64748B;font-weight:500;">Invoice #</span><span style="color:#0F172A;font-weight:600;">${escHtml(rec.invoiceNo||'—')}</span>
+                <span style="color:#64748B;font-weight:500;">Date</span><span style="color:#0F172A;">${fmtDate(rec.date)}</span>
+                <span style="color:#64748B;font-weight:500;">PO / Job #</span><span style="color:#0F172A;">${escHtml(rec.jobNo||'—')}</span>
+                <span style="color:#64748B;font-weight:500;">Bill To</span><span style="color:#0F172A;">CSK Electric</span>
+            </div>
+            ${items.length > 0
+                ? `<table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
+                    <thead><tr style="background:#F8FAFC;">
+                        <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:left;border-bottom:2px solid #E2E8F0;">Description</th>
+                        <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:center;border-bottom:2px solid #E2E8F0;">Qty</th>
+                        <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:center;border-bottom:2px solid #E2E8F0;">Unit</th>
+                        <th style="padding:7px 8px;font-size:10px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.05em;text-align:right;border-bottom:2px solid #E2E8F0;">Amount</th>
+                    </tr></thead>
+                    <tbody>${itemRows}</tbody>
+                </table>`
+                : `<div style="padding:18px;text-align:center;color:#94A3B8;font-size:12px;background:#F8FAFC;border-radius:6px;margin-bottom:14px;">No line items extracted</div>`
+            }
+            <div style="border-top:2px solid #E2E8F0;padding-top:10px;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+                <div style="display:flex;justify-content:space-between;width:180px;font-size:12px;color:#64748B;">
+                    <span>Subtotal</span><span style="font-variant-numeric:tabular-nums;">${fmt(subtotal)}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;width:180px;font-size:12px;color:#64748B;">
+                    <span>GST (5%)</span><span style="font-variant-numeric:tabular-nums;">${fmt(gst)}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;width:180px;font-size:13px;font-weight:700;color:#0F172A;margin-top:5px;padding-top:6px;border-top:1px solid #E2E8F0;">
+                    <span>TOTAL</span><span style="color:#F97316;font-variant-numeric:tabular-nums;">${fmt(rec.amount)}</span>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+function historyDetailPanelHTML(rec) {
+    const isJobber = rec.jobberExpenseId || rec.status === 'jobber';
+    const bCls = isJobber ? 'badge-jobber' : rec.status === 'posted' ? 'badge-posted' : rec.status === 'error' ? 'badge-error' : 'badge-processing';
+    const bLbl = isJobber ? 'In Jobber' : rec.status === 'posted' ? 'Saved' : rec.status === 'error' ? 'Error' : 'Pending';
+    const dr = (lbl, val) => `<div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">${lbl}</span>
+        <span style="font-size:12px;color:#374151;line-height:1.4;">${val}</span>
+    </div>`;
+    return `<div style="width:192px;min-width:192px;border-left:1px solid #E2E8F0;overflow-y:auto;background:#fff;flex-shrink:0;">
+        <div style="padding:14px 14px 12px;border-bottom:1px solid #F1F5F9;">
+            <div style="font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Details</div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+                ${dr('Receipt ID', `<code style="font-size:10.5px;color:#F97316;background:#FFF7ED;padding:1px 5px;border-radius:3px;font-weight:700;">${escHtml(rec.id)}</code>`)}
+                ${dr('Vendor', escHtml(rec.vendor||'—'))}
+                ${dr('Invoice', escHtml(rec.invoiceNo||'—'))}
+                ${dr('Date', fmtDate(rec.date))}
+                ${dr('Amount', `<span style="color:#F97316;font-weight:700;font-size:13px;">${fmt(rec.amount)}</span>`)}
+            </div>
+        </div>
+        <div style="padding:14px 14px 12px;border-bottom:1px solid #F1F5F9;">
+            <div style="font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Job</div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+                ${dr('Job #', rec.jobNo ? `<code style="font-size:11px;color:#374151;background:#F1F5F9;padding:1px 5px;border-radius:3px;">${escHtml(rec.jobNo)}</code>` : '<span style="color:#E11D48;font-size:11.5px;font-weight:500;">Not found</span>')}
+                ${dr('Status', `<span class="badge ${bCls}" style="font-size:10px;padding:2px 7px;"><span class="badge-dot"></span>${bLbl}</span>`)}
+                ${dr('Saved', `<span style="font-size:11px;">${escHtml(rec.savedAt||'—')}</span>`)}
+            </div>
+        </div>
+        <div style="padding:14px 14px 12px;">
+            <div style="font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">File</div>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+                ${dr('Type', `<span style="font-weight:600;">${(rec.fileType||'PDF').toUpperCase()}</span>`)}
+                ${dr('Source', escHtml(rec.source||'Upload'))}
+                ${rec.error ? dr('Error', `<span style="color:#E11D48;font-size:11px;line-height:1.4;">${escHtml(rec.error)}</span>`) : ''}
+            </div>
+        </div>
+    </div>`;
+}
+
+function historyEmptyStateHTML() {
+    return `<div style="flex:1;display:flex;align-items:center;justify-content:center;background:#F8FAFC;">
+        <div style="text-align:center;">
+            <div style="width:52px;height:52px;background:#F1F5F9;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+                <i class="fa-solid fa-receipt" style="font-size:20px;color:#CBD5E1;"></i>
+            </div>
+            <div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px;">Select a receipt to preview</div>
+            <div style="font-size:13px;color:#94A3B8;">Click any receipt in the list</div>
+        </div>
+    </div>`;
+}
+
+function selectHistoryReceipt(id) {
+    const data = state.history.length > 0 ? state.history : HISTORY_MOCK;
+    const rec = data.find(r => r.id === id);
+    if (!rec) return;
+    state.selectedHistoryId = id;
+    document.querySelectorAll('.history-row').forEach(el => {
+        const sel = el.dataset.id === id;
+        el.style.background = sel ? '#FFF5F0' : '#fff';
+        el.style.borderLeftColor = sel ? '#F97316' : 'transparent';
+        el.style.paddingLeft = sel ? '11px' : '14px';
+    });
+    const pane = document.getElementById('history-preview-pane');
+    if (pane) pane.innerHTML = historyPreviewPaneHTML(rec);
 }
 
 /* ── Error Queue View ── */
@@ -1405,6 +1589,113 @@ async function processGmailRow(row) {
     }
 }
 
+/* ── History Mock Data ── */
+const HISTORY_MOCK = [
+    { id:'REC-4821', vendor:'GESCAN', invoiceNo:'INV-882340', date:'2026-04-18',
+      amount:1247.50, jobNo:'4521', status:'jobber', savedAt:'Apr 18, 2026 9:14 AM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'ROMEX 14/2 NM-B WIRE 250FT', qty:'4', unit:'RL', unitPrice:'89.50', totalPrice:'358.00' },
+        { description:'LEVITON 15A TAMPER-RES OUTLET WHT', qty:'24', unit:'EA', unitPrice:'3.25', totalPrice:'78.00' },
+        { description:'1/2" EMT CONDUIT 10FT', qty:'10', unit:'PC', unitPrice:'4.80', totalPrice:'48.00' },
+        { description:'ROMEX 12/2 NM-B WIRE 250FT', qty:'6', unit:'RL', unitPrice:'127.25', totalPrice:'763.50' },
+      ]},
+    { id:'REC-4820', vendor:'GESCAN', invoiceNo:'INV-875021', date:'2026-04-16',
+      amount:534.80, jobNo:'4498', status:'posted', savedAt:'Apr 16, 2026 2:31 PM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'3/4" EMT CONNECTOR SET-SCREW', qty:'50', unit:'EA', unitPrice:'0.65', totalPrice:'32.50' },
+        { description:'JUNCTION BOX 4" SQ STEEL', qty:'12', unit:'EA', unitPrice:'3.90', totalPrice:'46.80' },
+        { description:'20A BREAKER SQUARE-D QO120', qty:'8', unit:'EA', unitPrice:'11.40', totalPrice:'91.20' },
+        { description:'LEVITON DIMMER 600W IVORY', qty:'4', unit:'EA', unitPrice:'8.50', totalPrice:'34.00' },
+        { description:'ROMEX 14/3 NM-B WIRE 250FT', qty:'2', unit:'RL', unitPrice:'165.15', totalPrice:'330.30' },
+      ]},
+    { id:'REC-4819', vendor:'GESCAN', invoiceNo:'INV-871640', date:'2026-04-14',
+      amount:289.35, jobNo:null, status:'error', savedAt:'Apr 14, 2026 11:08 AM',
+      fileType:'img', source:'Upload', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      error:'Job number not found in Jobber',
+      items:[
+        { description:'PANDUIT CABLE TIE 8" NATURAL 100PK', qty:'3', unit:'BG', unitPrice:'7.20', totalPrice:'21.60' },
+        { description:'1" EMT CONDUIT 10FT', qty:'20', unit:'PC', unitPrice:'8.25', totalPrice:'165.00' },
+        { description:'1" EMT ELBOW 90DEG', qty:'8', unit:'EA', unitPrice:'3.97', totalPrice:'31.76' },
+        { description:'PVC TAPE 3/4" x 60FT BLACK', qty:'6', unit:'RL', unitPrice:'1.17', totalPrice:'7.02' },
+        { description:'WIRE NUT 500PK ORANGE', qty:'1', unit:'BX', unitPrice:'32.00', totalPrice:'32.00' },
+      ]},
+    { id:'REC-4818', vendor:'GESCAN', invoiceNo:'INV-869205', date:'2026-04-11',
+      amount:1892.40, jobNo:'4487', status:'jobber', savedAt:'Apr 11, 2026 4:22 PM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'SQUARE-D 200A PANEL QO130L200PG', qty:'1', unit:'EA', unitPrice:'342.00', totalPrice:'342.00' },
+        { description:'2" RIGID CONDUIT 10FT', qty:'20', unit:'PC', unitPrice:'18.50', totalPrice:'370.00' },
+        { description:'2" RIGID COUPLING', qty:'10', unit:'EA', unitPrice:'4.20', totalPrice:'42.00' },
+        { description:'40A BREAKER 240V 2P QO240', qty:'6', unit:'EA', unitPrice:'24.40', totalPrice:'146.40' },
+        { description:'6 AWG THHN COPPER WIRE 500FT', qty:'2', unit:'SP', unitPrice:'276.00', totalPrice:'552.00' },
+        { description:'3/4" LIQUID TIGHT FLEX 25FT', qty:'6', unit:'RL', unitPrice:'18.00', totalPrice:'108.00' },
+        { description:'CONDUIT STRAPS 1" 100PK', qty:'4', unit:'BX', unitPrice:'9.50', totalPrice:'38.00' },
+        { description:'WEATHERPROOF OUTLET COVER', qty:'6', unit:'EA', unitPrice:'7.00', totalPrice:'42.00' },
+      ]},
+    { id:'REC-4817', vendor:'GESCAN', invoiceNo:'INV-864110', date:'2026-04-09',
+      amount:176.20, jobNo:'4481', status:'posted', savedAt:'Apr 9, 2026 8:55 AM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'WIRE NUTS 100PK RED', qty:'4', unit:'BX', unitPrice:'5.25', totalPrice:'21.00' },
+        { description:'JUNCTION BOX 2" SQUARE', qty:'8', unit:'EA', unitPrice:'2.10', totalPrice:'16.80' },
+        { description:'1/2" EMT STRAPS 100PK', qty:'2', unit:'BX', unitPrice:'6.50', totalPrice:'13.00' },
+        { description:'DUPLEX OUTLET 15A WHITE 10PK', qty:'1', unit:'BX', unitPrice:'12.40', totalPrice:'12.40' },
+        { description:'ROMEX STAPLES 1/2" 100PK', qty:'3', unit:'BX', unitPrice:'4.00', totalPrice:'12.00' },
+        { description:'15A BREAKER QO115', qty:'6', unit:'EA', unitPrice:'5.00', totalPrice:'30.00' },
+        { description:'PUSH-IN WIRE CONNECTOR 50PK', qty:'2', unit:'BX', unitPrice:'10.25', totalPrice:'20.50' },
+      ]},
+    { id:'REC-4816', vendor:'GESCAN', invoiceNo:'INV-859447', date:'2026-04-07',
+      amount:443.60, jobNo:null, status:'error', savedAt:'Apr 7, 2026 3:19 PM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      error:'Gemini extraction failed — illegible scan quality',
+      items:[
+        { description:'3/4" EMT CONDUIT 10FT', qty:'15', unit:'PC', unitPrice:'3.80', totalPrice:'57.00' },
+        { description:'3/4" EMT ELBOW 90DEG', qty:'6', unit:'EA', unitPrice:'2.40', totalPrice:'14.40' },
+        { description:'3/4" EMT COUPLING', qty:'12', unit:'EA', unitPrice:'0.90', totalPrice:'10.80' },
+        { description:'ROMEX 10/3 NM-B WIRE 250FT', qty:'2', unit:'RL', unitPrice:'180.70', totalPrice:'361.40' },
+      ]},
+    { id:'REC-4815', vendor:'GESCAN', invoiceNo:'INV-855023', date:'2026-04-03',
+      amount:2341.00, jobNo:'4472', status:'jobber', savedAt:'Apr 3, 2026 10:42 AM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'SQUARE-D 100A MAIN BREAKER QO1DM100PG', qty:'2', unit:'EA', unitPrice:'198.00', totalPrice:'396.00' },
+        { description:'10 AWG THHN COPPER WIRE 500FT', qty:'3', unit:'SP', unitPrice:'148.00', totalPrice:'444.00' },
+        { description:'2" EMT CONDUIT 10FT', qty:'25', unit:'PC', unitPrice:'9.80', totalPrice:'245.00' },
+        { description:'2" EMT COUPLING', qty:'15', unit:'EA', unitPrice:'2.60', totalPrice:'39.00' },
+        { description:'ROMEX 12/3 NM-B WIRE 250FT', qty:'4', unit:'RL', unitPrice:'182.25', totalPrice:'729.00' },
+        { description:'30A BREAKER 240V 2P QO230', qty:'8', unit:'EA', unitPrice:'18.50', totalPrice:'148.00' },
+        { description:'4" SQ JUNCTION BOX DEEP', qty:'10', unit:'EA', unitPrice:'5.50', totalPrice:'55.00' },
+        { description:'SPLIT BOLT CONNECTOR 2AWG', qty:'5', unit:'EA', unitPrice:'7.00', totalPrice:'35.00' },
+        { description:'CABLE CLAMP ROMEX 1/2" 25PK', qty:'10', unit:'BX', unitPrice:'2.50', totalPrice:'25.00' },
+      ]},
+    { id:'REC-4814', vendor:'GESCAN', invoiceNo:'INV-850188', date:'2026-04-01',
+      amount:88.45, jobNo:'4468', status:'posted', savedAt:'Apr 1, 2026 1:07 PM',
+      fileType:'img', source:'Upload', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'WIRE NUTS 100PK YELLOW', qty:'2', unit:'BX', unitPrice:'5.25', totalPrice:'10.50' },
+        { description:'ELECTRICAL TAPE 3PK BLACK', qty:'3', unit:'PK', unitPrice:'4.65', totalPrice:'13.95' },
+        { description:'DUPLEX OUTLET 15A IVORY 10PK', qty:'1', unit:'BX', unitPrice:'12.40', totalPrice:'12.40' },
+        { description:'OUTLET COVER PLATE WHITE 10PK', qty:'1', unit:'BX', unitPrice:'4.60', totalPrice:'4.60' },
+        { description:'ROMEX STAPLES 3/4" 100PK', qty:'4', unit:'BX', unitPrice:'4.75', totalPrice:'19.00' },
+        { description:'OUTLET TESTER SPERRY', qty:'1', unit:'EA', unitPrice:'16.00', totalPrice:'16.00' },
+      ]},
+    { id:'REC-4813', vendor:'GESCAN', invoiceNo:'INV-845760', date:'2026-03-28',
+      amount:612.75, jobNo:'4460', status:'posted', savedAt:'Mar 28, 2026 5:33 PM',
+      fileType:'pdf', source:'Gmail', address:'2440 Pegasus Rd NE, Calgary, AB T2E 8C3',
+      items:[
+        { description:'1/2" EMT CONDUIT 10FT', qty:'30', unit:'PC', unitPrice:'4.80', totalPrice:'144.00' },
+        { description:'1/2" EMT CONNECTOR SET-SCREW', qty:'40', unit:'EA', unitPrice:'0.55', totalPrice:'22.00' },
+        { description:'1/2" EMT COUPLING', qty:'20', unit:'EA', unitPrice:'0.45', totalPrice:'9.00' },
+        { description:'15A GFCI OUTLET WHITE', qty:'6', unit:'EA', unitPrice:'14.50', totalPrice:'87.00' },
+        { description:'15A GFCI OUTLET DECORA WHITE', qty:'4', unit:'EA', unitPrice:'18.25', totalPrice:'73.00' },
+        { description:'LEVITON OUTLET 3PK WHITE', qty:'5', unit:'PK', unitPrice:'9.35', totalPrice:'46.75' },
+        { description:'BLUE WIRENUTS 100PK', qty:'3', unit:'BX', unitPrice:'5.00', totalPrice:'15.00' },
+        { description:'ROMEX 14/2 NM-B 50FT', qty:'5', unit:'PC', unitPrice:'23.20', totalPrice:'116.00' },
+      ]},
+];
+
 /* ── Settings View ── */
 function settingsHTML() {
     const s = state.settings;
@@ -1687,11 +1978,16 @@ function bind() {
 function filterHistory() {
     const search = (document.getElementById('history-search')?.value || '').toLowerCase();
     const filter = document.getElementById('history-filter')?.value || 'all';
-    document.querySelectorAll('#history-tbody tr').forEach(tr => {
-        const matchSearch = !search || (tr.dataset.search || '').includes(search);
-        const matchFilter = filter === 'all' || tr.dataset.status === filter;
-        tr.style.display = matchSearch && matchFilter ? '' : 'none';
+    let visible = 0;
+    document.querySelectorAll('.history-row').forEach(el => {
+        const matchSearch = !search || (el.dataset.search || '').includes(search);
+        const matchFilter = filter === 'all' || el.dataset.status === filter;
+        const show = matchSearch && matchFilter;
+        el.style.display = show ? '' : 'none';
+        if (show) visible++;
     });
+    const noRes = document.getElementById('history-no-results');
+    if (noRes) noRes.style.display = visible === 0 ? '' : 'none';
 }
 
 /* ── File Handling & Extraction ── */
