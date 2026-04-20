@@ -4,10 +4,6 @@
     {
       "path": "/api/process-incoming",
       "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/process-queue",
-      "schedule": "*/2 * * * *"
     }
   ],
   "builds": [
