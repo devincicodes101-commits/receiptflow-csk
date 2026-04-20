@@ -1209,6 +1209,28 @@ app.get('/api/jobber-status', async (req, res) => {
   }
 });
 
+// ── Queue a manually uploaded file for background processing ──
+app.post('/api/queue-upload', async (req, res) => {
+  try {
+    const { fileName, fileUrl, fileType } = req.body || {};
+    if (!fileName || !fileUrl || !fileType) {
+      return res.status(400).json({ error: 'Missing fileName, fileUrl, or fileType' });
+    }
+    const sb = await getSupabaseAdmin();
+    const { data, error } = await sb.from('upload_queue').insert({
+      user_id: req.user.id,
+      file_name: fileName,
+      file_url: fileUrl,
+      file_type: fileType,
+      status: 'pending'
+    }).select('id').single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ success: true, id: data.id });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Create Jobber expense ──
 app.post('/api/create-expense', async (req, res) => {
   try {

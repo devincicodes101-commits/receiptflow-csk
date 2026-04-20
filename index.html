@@ -2103,14 +2103,13 @@ async function queueUploadFiles(files) {
             if (urlErr || !urlData?.signedUrl) { toast(`Could not get URL for ${file.name}`, 'error'); continue; }
 
             const fileType = file.type === 'application/pdf' ? 'pdf' : 'img';
-            const { error: insertErr } = await sb.from('upload_queue').insert({
-                user_id: currentUser.id,
-                file_name: file.name,
-                file_url: urlData.signedUrl,
-                file_type: fileType,
-                status: 'pending'
+            const qRes = await authedFetch(API_BASE + '/api/queue-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName: file.name, fileUrl: urlData.signedUrl, fileType })
             });
-            if (insertErr) { toast(`DB insert failed for ${file.name}: ${insertErr.message}`, 'error'); continue; }
+            const qData = await qRes.json();
+            if (!qRes.ok || !qData.success) { toast(`Queue insert failed for ${file.name}: ${qData.error || 'unknown'}`, 'error'); continue; }
             queued++;
         } catch (e) {
             toast(`Error queuing ${file.name}: ${e.message}`, 'error');
