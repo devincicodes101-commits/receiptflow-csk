@@ -2243,16 +2243,24 @@ async function queueUploadFiles(files) {
 }
 
 async function processQueueSequentially(queueIds) {
-    for (const queueId of queueIds) {
-        try {
-            await authedFetch(API_BASE + '/api/process-queue-item', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ queueId })
-            });
-        } catch (e) {
-            console.warn('[queue] process error for', queueId, e.message);
+    if (_queueProcessingActive) return;
+    _queueProcessingActive = true;
+    try {
+        for (const queueId of queueIds) {
+            try {
+                await authedFetch(API_BASE + '/api/process-queue-item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ queueId })
+                });
+                await loadReviewQueue();
+                if (state.view === 'review-queue') render();
+            } catch (e) {
+                console.warn('[queue] process error for', queueId, e.message);
+            }
         }
+    } finally {
+        _queueProcessingActive = false;
     }
 }
 
@@ -2363,6 +2371,7 @@ async function handleLargeFile(file) {
 
 /* ── Review Queue ── */
 let _queuePollTimer = null;
+let _queueProcessingActive = false;
 
 function stopQueuePolling() {
     if (_queuePollTimer) { clearInterval(_queuePollTimer); _queuePollTimer = null; }
@@ -2387,6 +2396,12 @@ async function loadReviewQueue() {
             .order('created_at', { ascending: false });
         state.reviewItems = data || [];
         updateReviewBadge();
+
+        // Auto-resume: if pending items exist and no browser loop is running, start one
+        const pendingIds = (data || []).filter(i => i.status === 'pending').map(i => i.id);
+        if (pendingIds.length > 0 && !_queueProcessingActive) {
+            processQueueSequentially(pendingIds);
+        }
     } catch (e) {
         console.warn('[review-queue] load error:', e.message);
     }
@@ -2588,6 +2603,14 @@ function reviewQueueHTML() {
         </div>`;
     }
 
+    const doneCount = items.filter(i => i.status === 'done').length;
+    const failedCount = items.filter(i => i.status === 'failed').length;
+    const processingCount = items.filter(i => i.status === 'processing').length;
+    const pendingCount = items.filter(i => i.status === 'pending').length;
+    const completedCount = doneCount + failedCount;
+    const progressPct = items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
+    const barColor = progressPct === 100 ? '#059669' : (failedCount > 0 && pendingCount === 0 && processingCount === 0 ? '#DC2626' : '#F97316');
+
     return `<div style="display:flex;height:100%;overflow:hidden;">
         <!-- List panel -->
         <div style="width:320px;min-width:320px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
@@ -2596,7 +2619,18 @@ function reviewQueueHTML() {
                     <div style="font-size:14px;font-weight:700;color:#0F172A;">Review Queue</div>
                     <div style="font-size:11.5px;color:#94A3B8;">${items.length} item${items.length!==1?'s':''}</div>
                 </div>
-                <div style="font-size:11.5px;color:#94A3B8;">Upload receipts to process them in the background</div>
+                <div style="font-size:11.5px;color:#94A3B8;margin-bottom:${items.length > 0 ? '10px' : '0'};">Upload receipts to process them in the background</div>
+                ${items.length > 0 ? `
+                <div style="display:flex;justify-content:space-between;font-size:10.5px;color:#94A3B8;margin-bottom:4px;">
+                    <span>${completedCount} of ${items.length} processed</span>
+                    <span style="font-weight:600;color:${barColor};">${progressPct}%</span>
+                </div>
+                <div style="height:5px;background:#F1F5F9;border-radius:3px;overflow:hidden;margin-bottom:5px;">
+                    <div style="height:100%;background:${barColor};border-radius:3px;transition:width 0.4s ease;width:${progressPct}%;"></div>
+                </div>
+                ${processingCount > 0 ? `<div style="font-size:10.5px;color:#F97316;"><i class="fa-solid fa-spinner fa-spin" style="font-size:9px;margin-right:3px;"></i>Processing ${processingCount} receipt${processingCount>1?'s'}…</div>` : ''}
+                ${pendingCount > 0 && processingCount === 0 ? `<div style="font-size:10.5px;color:#94A3B8;"><i class="fa-regular fa-clock" style="font-size:9px;margin-right:3px;"></i>${pendingCount} waiting to process…</div>` : ''}
+                ` : ''}
             </div>
             <div style="overflow-y:auto;flex:1;">${items.length ? listRows : emptyList}</div>
         </div>
