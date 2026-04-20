@@ -1209,6 +1209,39 @@ app.get('/api/jobber-status', async (req, res) => {
   }
 });
 
+// ── Process a single queue item (called per-file from the frontend with JWT auth) ──
+app.post('/api/process-queue-item', async (req, res) => {
+  try {
+    const { queueId } = req.body || {};
+    const sb = await getSupabaseAdmin();
+
+    let row;
+    if (queueId) {
+      const { data } = await sb.from('upload_queue').select('*')
+        .eq('id', queueId).eq('user_id', req.user.id).eq('status', 'pending').single();
+      row = data;
+    } else {
+      const { data } = await sb.from('upload_queue').select('*')
+        .eq('user_id', req.user.id).eq('status', 'pending')
+        .order('created_at', { ascending: true }).limit(1).single();
+      row = data;
+    }
+
+    if (!row) return res.json({ success: true, message: 'No pending item found' });
+
+    const { data: claimed } = await sb.from('upload_queue')
+      .update({ status: 'processing' })
+      .eq('id', row.id).eq('status', 'pending').select('id');
+
+    if (!claimed || claimed.length === 0) return res.json({ success: true, message: 'Item already claimed' });
+
+    const result = await processOneQueueRow(sb, row);
+    return res.json({ success: true, result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Queue a manually uploaded file for background processing ──
 app.post('/api/queue-upload', async (req, res) => {
   try {

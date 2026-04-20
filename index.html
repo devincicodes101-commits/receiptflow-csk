@@ -2111,6 +2111,12 @@ async function queueUploadFiles(files) {
             const qData = await qRes.json();
             if (!qRes.ok || !qData.success) { toast(`Queue insert failed for ${file.name}: ${qData.error || 'unknown'}`, 'error'); continue; }
             queued++;
+            // Fire off processing for this specific item (non-blocking)
+            authedFetch(API_BASE + '/api/process-queue-item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ queueId: qData.id })
+            }).catch(() => {});
         } catch (e) {
             toast(`Error queuing ${file.name}: ${e.message}`, 'error');
         }
@@ -2118,8 +2124,6 @@ async function queueUploadFiles(files) {
 
     if (queued > 0) {
         toast(`${queued} receipt${queued > 1 ? 's' : ''} queued — processing in background`, 'success', 5000);
-        // Kick off background processing (fire-and-forget)
-        authedFetch(API_BASE + '/api/process-queue', { method: 'POST' }).catch(() => {});
         // Update badge and navigate to review queue
         await loadReviewQueue();
         navigate('review-queue');
