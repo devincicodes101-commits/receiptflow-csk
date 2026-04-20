@@ -1138,13 +1138,14 @@ function errorsHTML() {
 let gmailRows = [];
 
 function gmailHTML() {
-    return `<div class="fade-in" style="max-width:960px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+    return `<div class="fade-in">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
             <div>
-                <div style="font-size:17px;font-weight:700;color:#111827;">Gmail Receipts</div>
-                <div style="font-size:12px;color:#6B7280;margin-top:2px;">Receipts emailed in via n8n — processed automatically</div>
+                <div style="font-size:18px;font-weight:700;color:#0F172A;letter-spacing:-0.02em;">Gmail Receipts</div>
+                <div style="font-size:13px;color:#64748B;margin-top:3px;">Receipts emailed in via n8n — processed automatically</div>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div style="display:flex;gap:8px;">
                 <button class="btn btn-secondary btn-sm" onclick="loadGmailReceipts()">
                     <i class="fa-solid fa-rotate-right"></i> Refresh
                 </button>
@@ -1153,16 +1154,24 @@ function gmailHTML() {
                 </button>
             </div>
         </div>
-        <div id="gmail-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;"></div>
-        <div id="gmail-progress-wrap" style="display:none;background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                <span style="font-size:12px;font-weight:600;color:#374151;"><i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;color:#4F46E5;"></i>Processing receipts…</span>
-                <span id="gmail-progress-label" style="font-size:12px;color:#6B7280;"></span>
+
+        <!-- Stats row -->
+        <div id="gmail-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;"></div>
+
+        <!-- Progress bar -->
+        <div id="gmail-progress-wrap" style="display:none;background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-size:12px;font-weight:600;color:#374151;display:flex;align-items:center;gap:7px;">
+                    <i class="fa-solid fa-spinner fa-spin" style="color:#6366F1;"></i>Processing receipts…
+                </span>
+                <span id="gmail-progress-label" style="font-size:12px;color:#64748B;font-variant-numeric:tabular-nums;"></span>
             </div>
             <div class="progress-track"><div id="gmail-progress-fill" class="progress-fill active" style="width:0%;"></div></div>
-            <div id="gmail-progress-step" style="font-size:11px;color:#9CA3AF;margin-top:5px;"></div>
+            <div id="gmail-progress-step" style="font-size:11px;color:#94A3B8;margin-top:6px;"></div>
         </div>
-        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
+
+        <!-- Table -->
+        <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
             <div class="table-wrap">
                 <table class="data-table">
                     <thead><tr>
@@ -1175,7 +1184,7 @@ function gmailHTML() {
                         <th></th>
                     </tr></thead>
                     <tbody id="gmail-tbody">
-                        <tr><td colspan="7" style="text-align:center;color:#9CA3AF;padding:32px;">Loading…</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:#94A3B8;padding:40px;">Loading…</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1399,74 +1408,151 @@ async function processGmailRow(row) {
 /* ── Settings View ── */
 function settingsHTML() {
     const s = state.settings;
-    return `<div class="fade-in" style="max-width:600px;">
-        <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:20px;">Settings</div>
-        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:20px;">
-            <div class="settings-section">
-                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">AI Extraction</div>
-                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
-                    <span style="color:#6B7280;">Model</span>
-                    <span id="settings-model" style="font-weight:600;color:#374151;">Detecting...</span>
-                    <span style="color:#6B7280;">API Status</span>
-                    <span id="settings-api-status" style="color:#6B7280;">Checking...</span>
-                    <span style="color:#6B7280;">PO Detection</span>
-                    <span style="color:#374151;">Automatic (reads PO / Purchase Order field)</span>
-                </div>
-            </div>
-            <div class="settings-section">
-                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Jobber Integration</div>
-                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;font-size:13px;">
-                    <span style="color:#6B7280;">Status</span>
-                    <span id="settings-jobber-status" style="color:#6B7280;">Checking...</span>
-                    <span style="color:#6B7280;">Auth</span>
-                    <span style="color:#374151;">OAuth 2.0 via <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">JOBBER_CLIENT_ID</code> + <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">JOBBER_CLIENT_SECRET</code></span>
-                    <span style="color:#6B7280;">Connect</span>
-                    <span id="jobber-connect-wrap">
-                        <button class="btn btn-jobber btn-sm" id="btn-jobber-connect" onclick="connectJobber()" style="display:none;">
-                            <i class="fa-solid fa-link"></i> Connect Jobber
-                        </button>
-                        <span id="jobber-connect-ok" style="display:none;font-size:12px;color:#059669;font-weight:600;"><i class="fa-solid fa-check-circle"></i> Connected via OAuth</span>
-                    </span>
-                    <span style="color:#6B7280;">Blob Storage</span>
-                    <span id="settings-blob-status" style="color:#6B7280;">Checking...</span>
-                    <span style="color:#6B7280;">Posting</span>
-                    <span style="color:#374151;">Creates expense on matching Jobber job + attaches receipt URL</span>
-                </div>
-            </div>
-            <div class="settings-section">
-                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">Processing Rules</div>
-                <div style="display:flex;flex-direction:column;gap:14px;font-size:13px;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;">
-                        <div>
-                            <div style="color:#374151;font-weight:500;">Require confirmation before posting</div>
-                            <div style="font-size:11.5px;color:#9CA3AF;margin-top:1px;">Always show review screen after extraction</div>
+    return `<div class="fade-in">
+        <div style="font-size:18px;font-weight:700;color:#0F172A;letter-spacing:-0.02em;margin-bottom:20px;">Settings</div>
+
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;">
+
+            <!-- Left: config panels -->
+            <div style="display:flex;flex-direction:column;gap:16px;">
+
+                <!-- AI Extraction -->
+                <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="padding:14px 20px 12px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;gap:10px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(99,102,241,0.3);">
+                            <i class="fa-solid fa-robot" style="color:#fff;font-size:12px;"></i>
                         </div>
-                        <label class="toggle">
-                            <input type="checkbox" id="set-confirm" ${s.requireConfirm ? 'checked' : ''}>
-                            <span class="toggle-track"></span><span class="toggle-thumb"></span>
-                        </label>
+                        <div style="font-size:13px;font-weight:700;color:#0F172A;">AI Extraction</div>
                     </div>
-                    <div style="display:flex;align-items:center;justify-content:space-between;">
-                        <span style="color:#374151;font-weight:500;">Default expense category</span>
-                        <select class="form-input" style="width:160px;font-size:12.5px;" id="set-category">
-                            <option ${s.category === 'Materials' ? 'selected' : ''}>Materials</option>
-                            <option ${s.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
-                            <option ${s.category === 'Supplies' ? 'selected' : ''}>Supplies</option>
-                            <option ${s.category === 'Tools' ? 'selected' : ''}>Tools</option>
-                            <option ${s.category === 'Other' ? 'selected' : ''}>Other</option>
-                        </select>
+                    <div style="padding:16px 20px;display:grid;grid-template-columns:130px 1fr;gap:10px 16px;align-items:center;font-size:13px;">
+                        <span style="color:#64748B;font-weight:500;">Model</span>
+                        <span id="settings-model" style="font-weight:600;color:#0F172A;">Detecting...</span>
+                        <span style="color:#64748B;font-weight:500;">API Status</span>
+                        <span id="settings-api-status" style="color:#64748B;">Checking...</span>
+                        <span style="color:#64748B;font-weight:500;">PO Detection</span>
+                        <span style="color:#374151;">Automatic <span style="color:#94A3B8;font-size:12px;">(reads PO / Purchase Order field)</span></span>
+                    </div>
+                </div>
+
+                <!-- Jobber Integration -->
+                <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="padding:14px 20px 12px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;gap:10px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#6366F1,#4F46E5);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(79,70,229,0.3);">
+                            <i class="fa-solid fa-briefcase" style="color:#fff;font-size:12px;"></i>
+                        </div>
+                        <div style="font-size:13px;font-weight:700;color:#0F172A;">Jobber Integration</div>
+                    </div>
+                    <div style="padding:16px 20px;display:grid;grid-template-columns:130px 1fr;gap:10px 16px;align-items:center;font-size:13px;">
+                        <span style="color:#64748B;font-weight:500;">Status</span>
+                        <span id="settings-jobber-status" style="color:#64748B;">Checking...</span>
+                        <span style="color:#64748B;font-weight:500;">Auth</span>
+                        <span style="color:#374151;font-size:12px;">OAuth 2.0 via <code style="background:#F1F5F9;padding:2px 6px;border-radius:4px;font-size:11px;color:#475569;">JOBBER_CLIENT_ID</code> + <code style="background:#F1F5F9;padding:2px 6px;border-radius:4px;font-size:11px;color:#475569;">JOBBER_CLIENT_SECRET</code></span>
+                        <span style="color:#64748B;font-weight:500;">Connect</span>
+                        <span id="jobber-connect-wrap">
+                            <button class="btn btn-jobber btn-sm" id="btn-jobber-connect" onclick="connectJobber()" style="display:none;"><i class="fa-solid fa-link"></i> Connect Jobber</button>
+                            <span id="jobber-connect-ok" style="display:none;font-size:12px;color:#059669;font-weight:600;"><i class="fa-solid fa-check-circle"></i> Connected via OAuth</span>
+                        </span>
+                        <span style="color:#64748B;font-weight:500;">Blob Storage</span>
+                        <span id="settings-blob-status" style="color:#64748B;">Checking...</span>
+                        <span style="color:#64748B;font-weight:500;">Posting</span>
+                        <span style="color:#374151;font-size:12px;">Creates expense on matching Jobber job + attaches receipt URL</span>
+                    </div>
+                </div>
+
+                <!-- Processing Rules -->
+                <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="padding:14px 20px 12px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;gap:10px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#F97316,#EA580C);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(249,115,22,0.3);">
+                            <i class="fa-solid fa-sliders" style="color:#fff;font-size:12px;"></i>
+                        </div>
+                        <div style="font-size:13px;font-weight:700;color:#0F172A;">Processing Rules</div>
+                    </div>
+                    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:16px;font-size:13px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <div>
+                                <div style="color:#0F172A;font-weight:500;">Require confirmation before posting</div>
+                                <div style="font-size:11.5px;color:#94A3B8;margin-top:2px;">Always show review screen after extraction</div>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" id="set-confirm" ${s.requireConfirm ? 'checked' : ''}>
+                                <span class="toggle-track"></span><span class="toggle-thumb"></span>
+                            </label>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid #F1F5F9;">
+                            <span style="color:#0F172A;font-weight:500;">Default expense category</span>
+                            <select class="form-input" style="width:160px;font-size:12.5px;" id="set-category">
+                                <option ${s.category === 'Materials' ? 'selected' : ''}>Materials</option>
+                                <option ${s.category === 'Fuel' ? 'selected' : ''}>Fuel</option>
+                                <option ${s.category === 'Supplies' ? 'selected' : ''}>Supplies</option>
+                                <option ${s.category === 'Tools' ? 'selected' : ''}>Tools</option>
+                                <option ${s.category === 'Other' ? 'selected' : ''}>Other</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div>
-                <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:14px;">About</div>
-                <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;font-size:13px;">
-                    <span style="color:#6B7280;">App</span>
-                    <span style="color:#374151;">ReceiptFlow v2.0</span>
-                    <span style="color:#6B7280;">Company</span>
-                    <span style="color:#374151;">CSK Electric</span>
-                    <span style="color:#6B7280;">Auth</span>
-                    <span style="color:#374151;">Set via <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">AUTH_USER</code> / <code style="background:#F3F4F6;padding:1px 5px;border-radius:3px;font-size:11px;">AUTH_PASS</code> env vars</span>
+
+            <!-- Right: status + info panel -->
+            <div style="display:flex;flex-direction:column;gap:16px;">
+
+                <!-- Live status card -->
+                <div style="background:linear-gradient(135deg,#0F172A,#1E293B);border-radius:14px;padding:20px;box-shadow:0 4px 16px rgba(15,23,42,0.2);">
+                    <div style="font-size:12px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Live Status</div>
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <span style="font-size:13px;color:#CBD5E1;display:flex;align-items:center;gap:8px;">
+                                <i class="fa-solid fa-robot" style="color:#818CF8;font-size:12px;width:14px;text-align:center;"></i> Gemini AI
+                            </span>
+                            <span id="status-gemini" style="font-size:11px;font-weight:600;background:rgba(16,185,129,0.15);color:#34D399;padding:2px 9px;border-radius:999px;">Checking…</span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <span style="font-size:13px;color:#CBD5E1;display:flex;align-items:center;gap:8px;">
+                                <i class="fa-solid fa-briefcase" style="color:#818CF8;font-size:12px;width:14px;text-align:center;"></i> Jobber
+                            </span>
+                            <span id="status-jobber" style="font-size:11px;font-weight:600;background:rgba(16,185,129,0.15);color:#34D399;padding:2px 9px;border-radius:999px;">Checking…</span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <span style="font-size:13px;color:#CBD5E1;display:flex;align-items:center;gap:8px;">
+                                <i class="fa-solid fa-database" style="color:#818CF8;font-size:12px;width:14px;text-align:center;"></i> Supabase
+                            </span>
+                            <span style="font-size:11px;font-weight:600;background:rgba(16,185,129,0.15);color:#34D399;padding:2px 9px;border-radius:999px;">Connected</span>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <span style="font-size:13px;color:#CBD5E1;display:flex;align-items:center;gap:8px;">
+                                <i class="fa-solid fa-cloud" style="color:#818CF8;font-size:12px;width:14px;text-align:center;"></i> Blob Storage
+                            </span>
+                            <span id="status-blob" style="font-size:11px;font-weight:600;background:rgba(148,163,184,0.15);color:#94A3B8;padding:2px 9px;border-radius:999px;">Checking…</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- About card -->
+                <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="padding:14px 20px 12px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;gap:10px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#0EA5E9,#0284C7);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(14,165,233,0.3);">
+                            <i class="fa-solid fa-info" style="color:#fff;font-size:13px;"></i>
+                        </div>
+                        <div style="font-size:13px;font-weight:700;color:#0F172A;">About</div>
+                    </div>
+                    <div style="padding:16px 20px;display:grid;grid-template-columns:80px 1fr;gap:8px 12px;font-size:13px;">
+                        <span style="color:#64748B;font-weight:500;">App</span>
+                        <span style="color:#0F172A;font-weight:600;">ReceiptFlow v2.0</span>
+                        <span style="color:#64748B;font-weight:500;">Company</span>
+                        <span style="color:#374151;">CSK Electric</span>
+                        <span style="color:#64748B;font-weight:500;">Auth</span>
+                        <span style="color:#374151;font-size:12px;"><code style="background:#F1F5F9;padding:2px 5px;border-radius:4px;font-size:10.5px;color:#475569;">AUTH_USER</code> / <code style="background:#F1F5F9;padding:2px 5px;border-radius:4px;font-size:10.5px;color:#475569;">AUTH_PASS</code></span>
+                    </div>
+                </div>
+
+                <!-- Automation note -->
+                <div style="background:linear-gradient(135deg,#EFF6FF,#F5F3FF);border:1px solid #C7D2FE;border-radius:12px;padding:16px 18px;">
+                    <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px;">
+                        <div style="width:26px;height:26px;background:linear-gradient(135deg,#6366F1,#8B5CF6);border-radius:7px;display:flex;align-items:center;justify-content:center;">
+                            <i class="fa-solid fa-clock" style="color:#fff;font-size:11px;"></i>
+                        </div>
+                        <span style="font-size:12px;font-weight:700;color:#3730A3;">Automated Processing</span>
+                    </div>
+                    <div style="font-size:12px;color:#4338CA;line-height:1.5;">Vercel Cron runs daily at 9 AM PST — receipts emailed via n8n are processed automatically without any manual action.</div>
                 </div>
             </div>
         </div>
@@ -1552,20 +1638,29 @@ function bind() {
     const bConnect = document.getElementById('btn-jobber-connect');
     const connectOk = document.getElementById('jobber-connect-ok');
 
+    const pill = (ok, label) => ok
+        ? `<span style="font-size:11px;font-weight:600;background:rgba(16,185,129,0.15);color:#059669;padding:2px 9px;border-radius:999px;">${label}</span>`
+        : `<span style="font-size:11px;font-weight:600;background:rgba(239,68,68,0.1);color:#DC2626;padding:2px 9px;border-radius:999px;">${label}</span>`;
+
     if (sapiEl) {
         authedFetch(API_BASE + '/api/health').then(r => r.ok ? r.json() : null).then(d => {
             if (d) {
                 sapiEl.innerHTML = `<span style="color:#059669;font-weight:600;">Connected — ${d.model || 'Gemini'}</span>`;
                 if (sModelEl) sModelEl.textContent = (d.model || 'Gemini') + ' (Vision)';
-                if (sBlobEl) sBlobEl.innerHTML = d.blobConfigured
+                const blobOk = !!d.blobConfigured;
+                if (sBlobEl) sBlobEl.innerHTML = blobOk
                     ? '<span style="color:#059669;font-weight:600;">Configured ✓</span>'
                     : '<span style="color:#D97706;font-weight:600;">BLOB_READ_WRITE_TOKEN not set</span>';
+                const gEl = document.getElementById('status-gemini');
+                if (gEl) gEl.outerHTML = pill(true, 'Connected').replace('span>', `span id="status-gemini">`);
+                const bEl = document.getElementById('status-blob');
+                if (bEl) bEl.innerHTML = blobOk ? 'Configured' : 'Not set';
+                if (bEl) { bEl.style.background = blobOk ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.1)'; bEl.style.color = blobOk ? '#34D399' : '#F87171'; }
             }
         }).catch(() => {
             if (sapiEl) sapiEl.innerHTML = '<span style="color:#DC2626;">Offline</span>';
         });
 
-        // Check Jobber OAuth status
         authedFetch(API_BASE + '/api/jobber-status').then(r => r.ok ? r.json() : null).then(d => {
             if (!d) return;
             if (sjobberEl) {
@@ -1575,14 +1670,11 @@ function bind() {
                         ? '<span style="color:#D97706;font-weight:600;">Not authorized — click Connect</span>'
                         : '<span style="color:#DC2626;font-weight:600;">JOBBER_CLIENT_ID not set</span>');
             }
+            const jEl = document.getElementById('status-jobber');
+            if (jEl) { jEl.textContent = d.connected ? 'Connected' : 'Not connected'; jEl.style.background = d.connected ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.1)'; jEl.style.color = d.connected ? '#34D399' : '#F87171'; }
             if (bConnect && connectOk) {
-                if (d.connected) {
-                    bConnect.style.display = 'none';
-                    connectOk.style.display = 'inline';
-                } else if (d.authUrl) {
-                    bConnect.style.display = 'inline-flex';
-                    connectOk.style.display = 'none';
-                }
+                if (d.connected) { bConnect.style.display = 'none'; connectOk.style.display = 'inline'; }
+                else if (d.authUrl) { bConnect.style.display = 'inline-flex'; connectOk.style.display = 'none'; }
             }
         }).catch(() => {
             if (sjobberEl) sjobberEl.innerHTML = '<span style="color:#DC2626;">Could not check status</span>';
