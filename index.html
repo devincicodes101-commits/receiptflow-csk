@@ -1166,10 +1166,16 @@ function historyDocHTML(rec) {
                     style="max-width:100%;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.1);border:1px solid #E2E8F0;">
             </div>`;
         }
+        // PDF: fetch and re-wrap with correct MIME so browser renders it inline
         return `<div style="flex:1;overflow:hidden;padding:20px;background:#F8FAFC;display:flex;flex-direction:column;min-width:0;">
-            <iframe src="${escHtml(url)}"
-                style="flex:1;width:100%;border:none;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.1);"
-                title="Receipt PDF"></iframe>
+            <div id="hist-pdf-wrap" style="flex:1;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);background:#fff;">
+                <div id="hist-pdf-loading" style="flex:1;display:flex;align-items:center;justify-content:center;gap:10px;color:#64748B;font-size:13px;">
+                    <div class="spinner" style="width:22px;height:22px;border-width:2px;"></div> Loading PDF…
+                </div>
+                <iframe id="hist-pdf-frame" data-pdf-src="${escHtml(url)}"
+                    style="flex:1;width:100%;border:none;display:none;"
+                    title="Receipt PDF"></iframe>
+            </div>
         </div>`;
     }
 
@@ -1305,7 +1311,36 @@ function selectHistoryReceipt(id) {
         el.style.paddingLeft = sel ? '11px' : '14px';
     });
     const pane = document.getElementById('history-preview-pane');
-    if (pane) pane.innerHTML = historyPreviewPaneHTML(rec);
+    if (pane) { pane.innerHTML = historyPreviewPaneHTML(rec); initHistoryPdf(); }
+}
+
+function initHistoryPdf() {
+    const iframe = document.getElementById('hist-pdf-frame');
+    if (!iframe || !iframe.dataset.pdfSrc) return;
+    const url = iframe.dataset.pdfSrc;
+    delete iframe.dataset.pdfSrc;
+    const loading = document.getElementById('hist-pdf-loading');
+    fetch(url)
+        .then(r => {
+            if (!r.ok) throw new Error('fetch failed');
+            return r.blob();
+        })
+        .then(blob => {
+            const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+            iframe.src = URL.createObjectURL(pdfBlob);
+            iframe.style.display = '';
+            if (loading) loading.style.display = 'none';
+        })
+        .catch(() => {
+            // Fallback: open-in-tab link
+            if (loading) loading.innerHTML = `
+                <div style="text-align:center;">
+                    <div style="font-size:13px;color:#64748B;margin-bottom:10px;">Could not embed PDF</div>
+                    <a href="${escHtml(url)}" target="_blank" class="btn btn-secondary btn-sm">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open PDF in new tab
+                    </a>
+                </div>`;
+        });
 }
 
 /* ── Error Queue View ── */
@@ -1922,6 +1957,7 @@ function bind() {
     if (hs) hs.addEventListener('input', filterHistory);
     const hf = document.getElementById('history-filter');
     if (hf) hf.addEventListener('change', filterHistory);
+    initHistoryPdf();
 
     const sConfirm = document.getElementById('set-confirm');
     if (sConfirm) sConfirm.addEventListener('change', () => {
