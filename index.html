@@ -2087,10 +2087,13 @@ async function queueUploadFiles(files) {
     toast(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} to queue…`, 'info');
 
     // Upload ALL files in parallel so tab only needs to stay open ~4s total (not N×4s)
-    const results = await Promise.all(files.map(async (file) => {
+    // Stagger by 300ms per file to avoid Supabase free-tier concurrent upload limits
+    const results = await Promise.all(files.map(async (file, index) => {
+        if (index > 0) await new Promise(r => setTimeout(r, index * 300));
         try {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const path = `${currentUser.id}/${Date.now()}_${safeName}`;
+            // Include index to guarantee unique path even if files share a name or timestamp
+            const path = `${currentUser.id}/${Date.now()}_${index}_${safeName}`;
 
             const { error: upErr } = await sb.storage
                 .from('receipts')
