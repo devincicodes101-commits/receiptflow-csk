@@ -2084,26 +2084,36 @@ function startFileQueue(files) {
 async function queueUploadFiles(files) {
     if (!sb || !currentUser) { toast('Not signed in', 'error'); return; }
 
-    toast(`Uploading ${files.length} file${files.length > 1 ? 's' : ''} to queue…`, 'info');
+    const queueIds = [];
+    let failed = 0;
 
-    // Upload ALL files in parallel so tab only needs to stay open ~4s total (not N×4s)
-    // Stagger by 300ms per file to avoid Supabase free-tier concurrent upload limits
-    const results = await Promise.all(files.map(async (file, index) => {
-        if (index > 0) await new Promise(r => setTimeout(r, index * 300));
+    // Upload ONE FILE AT A TIME — Supabase free tier drops concurrent uploads silently
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        toast(`Uploading ${i + 1} of ${files.length}: ${file.name}…`, 'info', 6000);
         try {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            // Include index to guarantee unique path even if files share a name or timestamp
-            const path = `${currentUser.id}/${Date.now()}_${index}_${safeName}`;
+            const path = `${currentUser.id}/${Date.now()}_${i}_${safeName}`;
 
             const { error: upErr } = await sb.storage
                 .from('receipts')
                 .upload(path, file, { contentType: file.type, upsert: false });
-            if (upErr) { toast(`Upload failed for ${file.name}: ${upErr.message}`, 'error'); return null; }
+            if (upErr) {
+                console.error(`[upload] storage failed for ${file.name}:`, upErr.message);
+                toast(`Upload failed: ${file.name} — ${upErr.message}`, 'error', 6000);
+                failed++;
+                continue;
+            }
 
             const { data: urlData, error: urlErr } = await sb.storage
                 .from('receipts')
                 .createSignedUrl(path, 31536000);
-            if (urlErr || !urlData?.signedUrl) { toast(`Could not get URL for ${file.name}`, 'error'); return null; }
+            if (urlErr || !urlData?.signedUrl) {
+                console.error(`[upload] signed URL failed for ${file.name}:`, urlErr?.message);
+                toast(`URL error: ${file.name}`, 'error', 6000);
+                failed++;
+                continue;
+            }
 
             const fileType = file.type === 'application/pdf' ? 'pdf' : 'img';
             const qRes = await authedFetch(API_BASE + '/api/queue-upload', {
@@ -2112,22 +2122,32 @@ async function queueUploadFiles(files) {
                 body: JSON.stringify({ fileName: file.name, fileUrl: urlData.signedUrl, fileType })
             });
             const qData = await qRes.json();
-            if (!qRes.ok || !qData.success) { toast(`Queue insert failed for ${file.name}: ${qData.error || 'unknown'}`, 'error'); return null; }
-            return qData.id;
-        } catch (e) {
-            toast(`Error queuing ${file.name}: ${e.message}`, 'error');
-            return null;
-        }
-    }));
+            if (!qRes.ok || !qData.success) {
+                console.error(`[upload] queue insert failed for ${file.name}:`, qData.error);
+                toast(`Queue failed: ${file.name} — ${qData.error || 'unknown'}`, 'error', 6000);
+                failed++;
+                continue;
+            }
 
-    const queueIds = results.filter(Boolean);
+            queueIds.push(qData.id);
+            console.log(`[upload] queued ${file.name} → id=${qData.id}`);
+        } catch (e) {
+            console.error(`[upload] exception for ${file.name}:`, e);
+            toast(`Error: ${file.name} — ${e.message}`, 'error', 6000);
+            failed++;
+        }
+    }
 
     if (queueIds.length > 0) {
-        toast(`${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — processing in background`, 'success', 5000);
+        const msg = failed > 0
+            ? `${queueIds.length} queued, ${failed} failed — check console for details`
+            : `${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — processing in background`;
+        toast(msg, failed > 0 ? 'warning' : 'success', 6000);
         await loadReviewQueue();
         navigate('review-queue');
-        // Process sequentially (one at a time) to avoid Gemini rate limits
         processQueueSequentially(queueIds);
+    } else if (failed > 0) {
+        toast(`All ${failed} uploads failed — open browser console (F12) for details`, 'error', 8000);
     }
 }
 
