@@ -109,7 +109,10 @@ async function processRowCore(sb, incoming, fileBuffer, mimeType) {
 
     let jobberExpenseId = null;
     let jobberError = null;
-    const receiptBlobUrl = incoming.file_url || null;
+    const receiptBlobUrl = incoming.file_url ||
+      (incoming.storage_path
+        ? `${(process.env.SUPABASE_URL || '').trim()}/storage/v1/object/public/receipts/${incoming.storage_path}`
+        : null);
 
     try {
       const numStr = String(parseInt(fields.jobNo, 10));
