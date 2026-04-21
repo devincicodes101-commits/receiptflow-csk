@@ -1,4 +1,4 @@
-name: Process Incoming Receipts
+name: Process Upload Queue
 
 on:
   schedule:
@@ -9,12 +9,6 @@ jobs:
   process:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger receipt processing
-        run: |
-          curl -s -X POST https://receiptflow-csk.vercel.app/api/process-incoming \
-            -H "x-process-secret: ${{ secrets.PROCESS_SECRET }}" \
-            -w "\nHTTP %{http_code}" | tail -20
-
       - name: Process manual upload queue (one item per call, loop until empty)
         run: |
           for i in $(seq 1 20); do

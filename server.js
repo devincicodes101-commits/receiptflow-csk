@@ -85,7 +85,7 @@ const extractNodes = (jobsObj) => {
   return [];
 };
 
-async function processOneRow(sb, incoming) {
+async function processRowCore(sb, incoming, fileBuffer, mimeType) {
   const rowId = incoming.id;
   const markFailed = async (errorMsg) => {
     console.error(`[process-incoming] ${rowId}: failed — ${errorMsg}`);
@@ -96,22 +96,7 @@ async function processOneRow(sb, incoming) {
   };
 
   try {
-    let fileBuffer, mimeType;
-    if (incoming.file_url) {
-      const fileRes = await fetch(incoming.file_url);
-      if (!fileRes.ok) return markFailed(`Could not download file: HTTP ${fileRes.status}`);
-      fileBuffer = Buffer.from(await fileRes.arrayBuffer());
-      mimeType = getMimeType(incoming.file_name);
-    } else if (incoming.storage_path) {
-      const { data: dlData, error: dlErr } = await sb.storage.from('receipts').download(incoming.storage_path);
-      if (dlErr) return markFailed(`Storage download failed: ${dlErr.message}`);
-      fileBuffer = Buffer.from(await dlData.arrayBuffer());
-      mimeType = getMimeType(incoming.file_name || incoming.storage_path);
-    } else {
-      return markFailed('No file_url or storage_path on incoming record');
-    }
-
-    console.log(`[process-incoming] ${rowId}: downloaded ${fileBuffer.length} bytes, mime=${mimeType}`);
+    console.log(`[process-incoming] ${rowId}: processing ${fileBuffer.length} bytes, mime=${mimeType}`);
 
     const geminiOutput = await parseWithGemini(fileBuffer, mimeType);
     const fields = extractFieldsFromLlama(geminiOutput);
@@ -232,6 +217,66 @@ async function processOneRow(sb, incoming) {
     return markFailed(err.message || 'Unknown error');
   }
 }
+
+async function processOneRow(sb, incoming) {
+  const rowId = incoming.id;
+  const markFailed = async (errorMsg) => {
+    console.error(`[process-incoming] ${rowId}: failed — ${errorMsg}`);
+    await sb.from('incoming_receipts').update({
+      status: 'failed', error: errorMsg, processed_at: new Date().toISOString()
+    }).eq('id', rowId);
+    return { id: rowId, success: false, error: errorMsg };
+  };
+
+  try {
+    let fileBuffer, mimeType;
+    if (incoming.file_url) {
+      const fileRes = await fetch(incoming.file_url);
+      if (!fileRes.ok) return markFailed(`Could not download file: HTTP ${fileRes.status}`);
+      fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+      mimeType = getMimeType(incoming.file_name);
+    } else if (incoming.storage_path) {
+      const { data: dlData, error: dlErr } = await sb.storage.from('receipts').download(incoming.storage_path);
+      if (dlErr) return markFailed(`Storage download failed: ${dlErr.message}`);
+      fileBuffer = Buffer.from(await dlData.arrayBuffer());
+      mimeType = getMimeType(incoming.file_name || incoming.storage_path);
+    } else {
+      return markFailed('No file_url or storage_path on incoming record');
+    }
+    return processRowCore(sb, incoming, fileBuffer, mimeType);
+  } catch (err) {
+    return markFailed(err.message || 'Unknown error');
+  }
+}
+
+// ── n8n endpoint: POST binary PDF + rowId → full processing pipeline ──
+const n8nUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.post('/api/process-incoming-file', n8nUpload.single('file'), async (req, res) => {
+  const secret = (process.env.PROCESS_SECRET || '').trim();
+  const provided = (req.headers['x-process-secret'] || '').trim();
+  if (secret && provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
+
+  const rowId = (req.body || {}).rowId;
+  if (!rowId) return res.status(400).json({ error: 'Missing rowId' });
+  if (!req.file) return res.status(400).json({ error: 'Missing file' });
+
+  const sb = await getSupabaseAdmin();
+  const { data: row } = await sb.from('incoming_receipts').select('*').eq('id', rowId).single();
+  if (!row) return res.status(404).json({ error: 'Row not found' });
+
+  if (row.status !== 'pending') return res.json({ success: true, message: `Row already ${row.status}` });
+
+  const { data: claimed } = await sb.from('incoming_receipts')
+    .update({ status: 'processing' })
+    .eq('id', rowId).eq('status', 'pending').select('id');
+
+  if (!claimed || claimed.length === 0) return res.json({ success: true, message: 'Already claimed' });
+
+  const mimeType = getMimeType(row.file_name || req.file.originalname);
+  const result = await processRowCore(sb, row, req.file.buffer, mimeType);
+  return res.json(result);
+});
 
 // ── Process manual upload queue (queue-based, no auto-post) ──
 async function processOneQueueRow(sb, row) {
@@ -411,7 +456,7 @@ app.use('/api/inngest', serve({
 
 // ── Auth middleware — verifies Supabase JWT ──
 app.use(async (req, res, next) => {
-  if (req.path === '/api/process-incoming' || req.path === '/api/process-queue') return next();
+  if (req.path === '/api/process-incoming' || req.path === '/api/process-queue' || req.path === '/api/process-incoming-file') return next();
   if (req.path.startsWith('/api/inngest')) return next();
   const open = [
     '/api/config',
