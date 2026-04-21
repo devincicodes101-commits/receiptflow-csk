@@ -249,22 +249,19 @@ async function processOneRow(sb, incoming) {
   }
 }
 
-// ── n8n endpoint: POST binary PDF + rowId → full processing pipeline ──
-const n8nUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-app.post('/api/process-incoming-file', n8nUpload.single('file'), async (req, res) => {
+// ── n8n endpoint: POST { rowId } → Vercel downloads file and runs full pipeline ──
+// Avoids Vercel's 4.5 MB body limit — file never passes through n8n request.
+app.post('/api/process-incoming-row', async (req, res) => {
   const secret = (process.env.PROCESS_SECRET || '').trim();
   const provided = (req.headers['x-process-secret'] || '').trim();
   if (secret && provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
 
   const rowId = (req.body || {}).rowId;
   if (!rowId) return res.status(400).json({ error: 'Missing rowId' });
-  if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
   const sb = await getSupabaseAdmin();
   const { data: row } = await sb.from('incoming_receipts').select('*').eq('id', rowId).single();
   if (!row) return res.status(404).json({ error: 'Row not found' });
-
   if (row.status !== 'pending') return res.json({ success: true, message: `Row already ${row.status}` });
 
   const { data: claimed } = await sb.from('incoming_receipts')
@@ -273,8 +270,7 @@ app.post('/api/process-incoming-file', n8nUpload.single('file'), async (req, res
 
   if (!claimed || claimed.length === 0) return res.json({ success: true, message: 'Already claimed' });
 
-  const mimeType = getMimeType(row.file_name || req.file.originalname);
-  const result = await processRowCore(sb, row, req.file.buffer, mimeType);
+  const result = await processOneRow(sb, row);
   return res.json(result);
 });
 
@@ -456,7 +452,7 @@ app.use('/api/inngest', serve({
 
 // ── Auth middleware — verifies Supabase JWT ──
 app.use(async (req, res, next) => {
-  if (req.path === '/api/process-incoming' || req.path === '/api/process-queue' || req.path === '/api/process-incoming-file') return next();
+  if (req.path === '/api/process-incoming' || req.path === '/api/process-queue' || req.path === '/api/process-incoming-row') return next();
   if (req.path.startsWith('/api/inngest')) return next();
   const open = [
     '/api/config',
