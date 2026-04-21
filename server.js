@@ -109,10 +109,26 @@ async function processRowCore(sb, incoming, fileBuffer, mimeType) {
 
     let jobberExpenseId = null;
     let jobberError = null;
-    const receiptBlobUrl = incoming.file_url ||
-      (incoming.storage_path
-        ? `${(process.env.SUPABASE_URL || '').trim()}/storage/v1/object/public/receipts/${incoming.storage_path}`
-        : null);
+
+    // Upload to Vercel Blob for a guaranteed public URL Jobber can fetch
+    let receiptBlobUrl = null;
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const ext = mimeType === 'application/pdf' ? 'pdf' : (mimeType.split('/')[1] || 'jpg');
+        const blobResult = await blobPut(`receipts/incoming_${incoming.id}.${ext}`, fileBuffer, {
+          access: 'public',
+          contentType: mimeType,
+          token: process.env.BLOB_READ_WRITE_TOKEN
+        });
+        receiptBlobUrl = blobResult.url;
+        console.log(`[process-incoming] ${rowId}: uploaded to Vercel Blob: ${receiptBlobUrl}`);
+      } catch (blobErr) {
+        console.error(`[process-incoming] ${rowId}: Blob upload failed, falling back to file_url:`, blobErr.message);
+        receiptBlobUrl = incoming.file_url || null;
+      }
+    } else {
+      receiptBlobUrl = incoming.file_url || null;
+    }
 
     try {
       const numStr = String(parseInt(fields.jobNo, 10));
