@@ -851,16 +851,6 @@ function extractFieldsFromLlama(content) {
     total = Math.round(itemsSum * 100) / 100;
   }
 
-  // If extracted total differs from item sum by more than 2%, the extracted total is likely
-  // a partial subtotal (e.g. page 1 of a multi-page receipt). Trust the item sum instead.
-  if (total !== null && itemsSum > 0) {
-    const diff = Math.abs(total - itemsSum) / itemsSum;
-    if (diff > 0.02) {
-      console.log(`[fields] total mismatch: extracted=${total}, itemsSum=${itemsSum}, diff=${(diff*100).toFixed(1)}% — using itemsSum`);
-      total = Math.round(itemsSum * 100) / 100;
-    }
-  }
-
   console.log('[fields] extracted:', { vendor, invoiceNo, date, jobNo, total, itemCount: items.length });
   return { vendor, invoiceNo, date, jobNo, total, items };
 }
