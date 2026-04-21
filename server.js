@@ -852,11 +852,16 @@ PRICES AND TOTALS:
 - Monetary values (unit price, extended price, total) always contain a decimal point with exactly 2 digits (e.g. $8.99, $1,348.47, $274.37).
 - If a cell has no decimal point it is not a price. Do not invent or add decimal points.
 - Never place a line number or a catalog code in a price column.
+- The GRAND TOTAL or INVOICE TOTAL is ALWAYS the single largest dollar value at the very bottom of the document, after all line items. It is never a line item amount. Always include the totals row (TOTAL, GRAND TOTAL, SUBTOTAL, AMOUNT DUE) as a separate <tr> at the bottom of the table with the correct label in the first cell and the total value in the last cell.
 
-QUANTITIES AND CATALOG CODES:
-- The QTY or QUANTITY column contains the number of units ordered or shipped (e.g. 47, 82, 5, 76). These are typically under 10,000.
-- Product/catalog/SKU codes (e.g. 7150, 3520, 9024, 1190) are product identifiers. Place them in a SKU, PRODUCT CODE, or CATALOG # column — never in the QTY column or any price column.
-- A dash "—" or blank means the value is absent for that column. Do not substitute a line number or catalog code for a missing price.
+QUANTITIES:
+- The QTY, QTY ORDERED, QTY SHIPPED, or QUANTITY column contains whole numbers representing how many units (e.g. 1, 2, 5, 10, 47). These MUST be placed in the QTY column cell — never leave the QTY cell blank if a quantity is printed.
+- Never confuse quantity with catalog/product codes. Quantities are small whole numbers (usually 1-999). Catalog codes are large numbers (4+ digits like 7150, 3520).
+- A dash "—" or blank means the value is absent. Do not substitute.
+
+UNIT PRICE:
+- The UNIT PRICE, PRICE, or NET PRICE column contains the price per single unit with a decimal point (e.g. $3.40, $13.57, $36.85). Always extract this — never leave it blank if printed.
+- Unit price is ALWAYS less than or equal to the line total (AMOUNT/EXT PRICE) for that row.
 
 UNIT OF MEASURE:
 - Unit of measure values (MT, EA, EACH, PC, FT, M, LB) belong in the U/M or UNIT column, not as a separate description row.`;
