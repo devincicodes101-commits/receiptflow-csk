@@ -5,10 +5,41 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { put: blobPut } = require('@vercel/blob');
 const { randomUUID } = require('crypto');
+const { Inngest } = require('inngest');
+const { serve } = require('inngest/express');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const GEMINI_MODEL = 'gemini-2.5-pro';
+
+// ── Inngest client ──
+const inngest = new Inngest({
+  id: 'receiptflow',
+  eventKey: (process.env.INNGEST_EVENT_KEY || '').trim()
+});
+
+// ── Background job: process one receipt from upload_queue ──
+const processReceiptJob = inngest.createFunction(
+  { id: 'process-receipt', retries: 3 },
+  { event: 'receipt/queued' },
+  async ({ event }) => {
+    const { queueId } = event.data;
+    const sb = await getSupabaseAdmin();
+
+    const { data: row } = await sb.from('upload_queue')
+      .select('*').eq('id', queueId).eq('status', 'pending').single();
+
+    if (!row) return { message: 'Item not found or already processed' };
+
+    const { data: claimed } = await sb.from('upload_queue')
+      .update({ status: 'processing' })
+      .eq('id', queueId).eq('status', 'pending').select('id');
+
+    if (!claimed || claimed.length === 0) return { message: 'Already claimed by another run' };
+
+    return await processOneQueueRow(sb, row);
+  }
+);
 
 app.use(cors({
   origin: true,
@@ -375,9 +406,17 @@ app.all('/api/process-incoming', async (req, res) => {
   return res.json({ success: true, processed: toProcess.length, posted, failed, skipped: dupes.length, results });
 });
 
+// ── Inngest serve endpoint (must be before auth middleware) ──
+app.use('/api/inngest', serve({
+  client: inngest,
+  functions: [processReceiptJob],
+  signingKey: (process.env.INNGEST_SIGNING_KEY || '').trim()
+}));
+
 // ── Auth middleware — verifies Supabase JWT ──
 app.use(async (req, res, next) => {
   if (req.path === '/api/process-incoming' || req.path === '/api/process-queue') return next();
+  if (req.path.startsWith('/api/inngest')) return next();
   const open = [
     '/api/config',
     '/api/health',
@@ -1258,6 +1297,10 @@ app.post('/api/queue-upload', async (req, res) => {
       status: 'pending'
     }).select('id').single();
     if (error) return res.status(500).json({ error: error.message });
+
+    // Fire Inngest event — triggers background processing immediately
+    await inngest.send({ name: 'receipt/queued', data: { queueId: data.id } });
+
     return res.json({ success: true, id: data.id });
   } catch (err) {
     return res.status(500).json({ error: err.message });
