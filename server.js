@@ -67,13 +67,15 @@ app.get('/api/config', (req, res) => {
 });
 
 // ── Automated incoming receipt processor — registered BEFORE auth middleware ──
-const getMimeType = (name) => {
-  const n = (name || '').toLowerCase();
-  if (n.endsWith('.pdf')) return 'application/pdf';
-  if (n.endsWith('.png')) return 'image/png';
-  if (n.endsWith('.webp')) return 'image/webp';
-  if (n.endsWith('.gif')) return 'image/gif';
-  if (n.match(/\.jpe?g$/)) return 'image/jpeg';
+const getMimeType = (...names) => {
+  for (const name of names) {
+    const n = (name || '').toLowerCase();
+    if (n.endsWith('.pdf')) return 'application/pdf';
+    if (n.endsWith('.png')) return 'image/png';
+    if (n.endsWith('.webp')) return 'image/webp';
+    if (n.endsWith('.gif')) return 'image/gif';
+    if (n.match(/\.jpe?g$/)) return 'image/jpeg';
+  }
   return 'application/pdf';
 };
 
@@ -234,12 +236,12 @@ async function processOneRow(sb, incoming) {
       const fileRes = await fetch(incoming.file_url);
       if (!fileRes.ok) return markFailed(`Could not download file: HTTP ${fileRes.status}`);
       fileBuffer = Buffer.from(await fileRes.arrayBuffer());
-      mimeType = getMimeType(incoming.file_name);
+      mimeType = getMimeType(incoming.file_name, incoming.storage_path, incoming.file_url);
     } else if (incoming.storage_path) {
       const { data: dlData, error: dlErr } = await sb.storage.from('receipts').download(incoming.storage_path);
       if (dlErr) return markFailed(`Storage download failed: ${dlErr.message}`);
       fileBuffer = Buffer.from(await dlData.arrayBuffer());
-      mimeType = getMimeType(incoming.file_name || incoming.storage_path);
+      mimeType = getMimeType(incoming.file_name, incoming.storage_path);
     } else {
       return markFailed('No file_url or storage_path on incoming record');
     }
