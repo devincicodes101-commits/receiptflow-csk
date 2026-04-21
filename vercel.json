@@ -14,7 +14,7 @@
     {
       "src": "server.js",
       "use": "@vercel/node",
-      "config": { "maxDuration": 120 }
+      "config": { "maxDuration": 60 }
     }
   ],
   "headers": [

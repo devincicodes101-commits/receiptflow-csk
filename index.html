@@ -2231,7 +2231,7 @@ async function queueUploadFiles(files) {
     if (queueIds.length > 0) {
         const msg = failed > 0
             ? `${queueIds.length} queued, ${failed} failed — check console for details`
-            : `${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — n8n will process them shortly`;
+            : `${queueIds.length} receipt${queueIds.length > 1 ? 's' : ''} queued — processing will begin shortly`;
         toast(msg, failed > 0 ? 'warning' : 'success', 6000);
         await loadReviewQueue();
         navigate('review-queue');
@@ -2241,27 +2241,6 @@ async function queueUploadFiles(files) {
     }
 }
 
-async function processQueueSequentially(queueIds) {
-    if (_queueProcessingActive) return;
-    _queueProcessingActive = true;
-    try {
-        for (const queueId of queueIds) {
-            try {
-                await authedFetch(API_BASE + '/api/process-queue-item', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ queueId })
-                });
-                await loadReviewQueue();
-                if (state.view === 'review-queue') render();
-            } catch (e) {
-                console.warn('[queue] process error for', queueId, e.message);
-            }
-        }
-    } finally {
-        _queueProcessingActive = false;
-    }
-}
 
 async function processNextInQueue() {
     const file = state.fileQueue[state.queueIndex];
@@ -2370,7 +2349,6 @@ async function handleLargeFile(file) {
 
 /* ── Review Queue ── */
 let _queuePollTimer = null;
-let _queueProcessingActive = false;
 
 function stopQueuePolling() {
     if (_queuePollTimer) { clearInterval(_queuePollTimer); _queuePollTimer = null; }
