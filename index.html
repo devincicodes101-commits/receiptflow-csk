@@ -872,68 +872,64 @@ function uploadingHTML() {
 function uploadProgressHTML() {
     const p = state.uploadProgress;
     if (!p) return '';
-    const secs = Math.max(0, p.secsLeft);
-    const mins = Math.floor(secs / 60);
-    const s = secs % 60;
-    const timeStr = mins > 0 ? `${mins}m ${s}s` : `${s}s`;
     const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
 
     const fileRows = p.files.map((f, i) => {
-        let icon, color;
-        if (i < p.current)      { icon = 'fa-check-circle'; color = '#059669'; }
-        else if (i === p.current){ icon = 'fa-spinner fa-spin'; color = 'var(--brand)'; }
-        else                     { icon = 'fa-circle'; color = '#D1D5DB'; }
-        return `<div style="display:flex;align-items:center;gap:10px;font-size:12.5px;padding:5px 0;border-bottom:1px solid #F1F5F9;">
-            <i class="fa-solid ${icon}" style="color:${color};width:16px;font-size:13px;"></i>
-            <span style="flex:1;color:${i < p.current ? '#6B7280' : i === p.current ? '#111827' : '#9CA3AF'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(f.name)}</span>
-            <span style="font-size:11px;color:#94A3B8;">${i < p.current ? 'Done' : i === p.current ? 'Uploading…' : 'Waiting'}</span>
+        const done = i < p.current;
+        const active = i === p.current;
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;${i < p.files.length - 1 ? 'border-bottom:1px solid #F1F5F9;' : ''}">
+            <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+                background:${done ? '#ECFDF5' : active ? '#FFF7ED' : '#F9FAFB'};
+                border:1.5px solid ${done ? '#6EE7B7' : active ? '#FED7AA' : '#E5E7EB'};">
+                ${done
+                    ? '<i class="fa-solid fa-check" style="font-size:11px;color:#059669;"></i>'
+                    : active
+                        ? '<i class="fa-solid fa-arrow-up" style="font-size:11px;color:#F97316;"></i>'
+                        : '<i class="fa-regular fa-clock" style="font-size:11px;color:#9CA3AF;"></i>'
+                }
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:12.5px;font-weight:${active ? '600' : '400'};color:${done ? '#9CA3AF' : active ? '#111827' : '#6B7280'};
+                    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(f.name)}</div>
+            </div>
+            <div style="font-size:11px;font-weight:500;color:${done ? '#059669' : active ? '#F97316' : '#9CA3AF'};">
+                ${done ? 'Uploaded' : active ? 'Uploading…' : 'Waiting'}
+            </div>
         </div>`;
     }).join('');
 
-    return `<div class="fade-in" style="max-width:480px;margin:60px auto;">
-        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:32px;box-shadow:0 4px 20px rgba(0,0,0,0.06);">
-            <div style="text-align:center;margin-bottom:24px;">
-                <div style="width:72px;height:72px;margin:0 auto 16px;position:relative;">
-                    <svg viewBox="0 0 72 72" style="width:72px;height:72px;transform:rotate(-90deg);">
-                        <circle cx="36" cy="36" r="30" fill="none" stroke="#F1F5F9" stroke-width="6"/>
-                        <circle cx="36" cy="36" r="30" fill="none" stroke="#F97316" stroke-width="6"
-                            stroke-dasharray="${2 * Math.PI * 30}"
-                            stroke-dashoffset="${2 * Math.PI * 30 * (1 - pct / 100)}"
-                            style="transition:stroke-dashoffset 0.5s ease;"/>
-                    </svg>
-                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#F97316;">${pct}%</div>
-                </div>
-                <div style="font-size:17px;font-weight:700;color:#111827;margin-bottom:4px;">
-                    Uploading receipts…
-                </div>
-                <div style="font-size:13px;color:#6B7280;">
-                    File ${Math.min(p.current + 1, p.total)} of ${p.total}
-                </div>
-            </div>
+    return `<div style="max-width:460px;margin:48px auto;padding:0 16px;">
+        <div style="background:#fff;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;box-shadow:0 1px 8px rgba(0,0,0,0.06);">
 
-            <!-- Countdown -->
-            <div style="background:${secs <= 5 ? '#FFF7ED' : '#F0FDF4'};border:1px solid ${secs <= 5 ? '#FED7AA' : '#BBF7D0'};border-radius:10px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px;">
-                <i class="fa-solid fa-clock" style="font-size:18px;color:${secs <= 5 ? '#F97316' : '#059669'};"></i>
-                <div>
-                    <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.05em;">Keep this tab open</div>
-                    <div style="font-size:22px;font-weight:800;color:${secs <= 5 ? '#EA580C' : '#059669'};font-variant-numeric:tabular-nums;line-height:1.2;">${timeStr}</div>
+            <!-- Header -->
+            <div style="padding:24px 24px 20px;border-bottom:1px solid #F1F5F9;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                    <div style="width:36px;height:36px;background:#FFF7ED;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <i class="fa-solid fa-cloud-arrow-up" style="color:#F97316;font-size:16px;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size:15px;font-weight:700;color:#111827;">Uploading receipts</div>
+                        <div style="font-size:12px;color:#6B7280;">${p.current} of ${p.total} files uploaded</div>
+                    </div>
+                    <div style="margin-left:auto;font-size:13px;font-weight:700;color:#F97316;">${pct}%</div>
                 </div>
-                <div style="margin-left:auto;font-size:11.5px;color:#6B7280;text-align:right;max-width:140px;line-height:1.4;">
-                    Closing this tab now will lose<br>files not yet uploaded.
+                <!-- Progress bar -->
+                <div style="height:6px;background:#F1F5F9;border-radius:3px;overflow:hidden;">
+                    <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#F97316,#EA580C);border-radius:3px;transition:width 0.4s ease;"></div>
                 </div>
             </div>
 
             <!-- File list -->
-            <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:8px 12px;">
+            <div style="padding:4px 24px;">
                 ${fileRows}
             </div>
 
-            <!-- Progress bar -->
-            <div class="progress-track" style="margin-top:16px;">
-                <div class="progress-fill ${pct < 100 ? 'active' : ''}" style="width:${pct}%;background:linear-gradient(90deg,#F97316,#EA580C);"></div>
-            </div>
-            <div style="text-align:center;margin-top:8px;font-size:11.5px;color:#94A3B8;">
-                ${pct < 100 ? 'Once uploaded, processing continues automatically in the background.' : 'All files uploaded! Redirecting…'}
+            <!-- Footer note -->
+            <div style="padding:14px 24px;background:#F9FAFB;border-top:1px solid #F1F5F9;display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-circle-info" style="color:#94A3B8;font-size:13px;flex-shrink:0;"></i>
+                <span style="font-size:11.5px;color:#6B7280;line-height:1.5;">
+                    Keep this tab open until all files are uploaded. Processing happens automatically in the background — you can close the tab after.
+                </span>
             </div>
         </div>
     </div>`;
@@ -2156,17 +2152,9 @@ function startFileQueue(files) {
 async function queueUploadFiles(files) {
     if (!sb || !currentUser) { toast('Not signed in', 'error'); return; }
 
-    const SECS_PER_FILE = 7;
-    state.uploadProgress = { total: files.length, current: 0, secsLeft: files.length * SECS_PER_FILE, files };
+    state.uploadProgress = { total: files.length, current: 0, files };
     state.view = 'upload';
     render();
-
-    // Countdown timer — ticks every second
-    const timerInterval = setInterval(() => {
-        if (!state.uploadProgress) { clearInterval(timerInterval); return; }
-        state.uploadProgress.secsLeft = Math.max(0, state.uploadProgress.secsLeft - 1);
-        if (state.view === 'upload') render();
-    }, 1000);
 
     const queueIds = [];
     let failed = 0;
@@ -2175,8 +2163,6 @@ async function queueUploadFiles(files) {
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         state.uploadProgress.current = i;
-        // Reset time estimate for remaining files
-        state.uploadProgress.secsLeft = Math.max(state.uploadProgress.secsLeft, (files.length - i) * SECS_PER_FILE);
         render();
         try {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -2225,7 +2211,6 @@ async function queueUploadFiles(files) {
         }
     }
 
-    clearInterval(timerInterval);
     state.uploadProgress = null;
 
     if (queueIds.length > 0) {
