@@ -701,14 +701,14 @@ function extractFieldsFromLlama(content) {
       break;
     }
 
-    m = val.match(/^(\d{3,7})[-\s]/);
+    // Handle "1095 - RETURN", "1391-CREDIT" etc. with optional spaces around dash
+    m = val.match(/^(\d{3,7})\s*[-–]\s*[A-Z]/i);
     if (m) {
       jobNo = m[1];
       break;
     }
 
-    // Handle "1391-RETURN", "1095-CREDIT" etc. with suffix after dash
-    m = val.match(/^(\d{3,7})-[A-Z]/i);
+    m = val.match(/^(\d{3,7})[-\s]/);
     if (m) {
       jobNo = m[1];
       break;
