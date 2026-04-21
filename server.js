@@ -905,8 +905,6 @@ PRICES AND TOTALS:
 - If a cell has no decimal point it is not a price. Do not invent or add decimal points.
 - Never place a line number or a catalog code in a price column.
 - The GRAND TOTAL or INVOICE TOTAL is ALWAYS the single largest dollar value at the very bottom of the document, after all line items. It is never a line item amount. Always include the totals row (TOTAL, GRAND TOTAL, SUBTOTAL, AMOUNT DUE) as a separate <tr> at the bottom of the table with the correct label in the first cell and the total value in the last cell.
-- MULTI-PAGE DOCUMENTS: If the document says "Continued" or the totals row is blank/missing (common on page 1 of multi-page invoices), DO NOT use any intermediate subtotal as the GRAND TOTAL. Instead, calculate the GRAND TOTAL yourself by summing every line item TOTAL column value across ALL pages, then output a GRAND TOTAL row with that computed sum. Never leave the GRAND TOTAL blank.
-- TOTAL VERIFICATION (mandatory): After extracting or computing the GRAND TOTAL, verify it equals the sum of all line item totals (±0.05 for rounding). If it does not match, output the computed sum of line items as the GRAND TOTAL, not the printed value. Always output the final verified GRAND TOTAL as the last row of the table labeled "GRAND TOTAL".
 
 QUANTITIES:
 - The QTY, QTY ORDERED, QTY SHIPPED, or QUANTITY column contains whole numbers representing how many units (e.g. 1, 2, 5, 10, 47). These MUST be placed in the QTY column cell — never leave the QTY cell blank if a quantity is printed.
