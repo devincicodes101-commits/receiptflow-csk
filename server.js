@@ -13,10 +13,7 @@ const PORT = process.env.PORT || 3000;
 const GEMINI_MODEL = 'gemini-2.5-pro';
 
 // ── Inngest client ──
-const inngest = new Inngest({
-  id: 'receiptflow',
-  eventKey: (process.env.INNGEST_EVENT_KEY || '').trim()
-});
+const inngest = new Inngest({ id: 'receiptflow' });
 
 // ── Background job: process one receipt from upload_queue ──
 const processReceiptJob = inngest.createFunction(
@@ -409,8 +406,7 @@ app.all('/api/process-incoming', async (req, res) => {
 // ── Inngest serve endpoint (must be before auth middleware) ──
 app.use('/api/inngest', serve({
   client: inngest,
-  functions: [processReceiptJob],
-  signingKey: (process.env.INNGEST_SIGNING_KEY || '').trim()
+  functions: [processReceiptJob]
 }));
 
 // ── Auth middleware — verifies Supabase JWT ──
