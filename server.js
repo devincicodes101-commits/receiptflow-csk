@@ -4,7 +4,15 @@ const multer = require('multer');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { put: blobPut } = require('@vercel/blob');
-const { randomUUID } = require('crypto');
+const { randomUUID: _cryptoRandomUUID, randomBytes } = require('crypto');
+const randomUUID = _cryptoRandomUUID
+  ? () => _cryptoRandomUUID()
+  : () => {
+      const b = randomBytes(16);
+      b[6] = (b[6] & 0x0f) | 0x40;
+      b[8] = (b[8] & 0x3f) | 0x80;
+      return b.toString('hex').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+    };
 const { Inngest } = require('inngest');
 const { serve } = require('inngest/express');
 
