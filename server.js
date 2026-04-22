@@ -188,6 +188,8 @@ async function processRowCore(sb, incoming, fileBuffer, mimeType) {
 
         const expense = expResult.data?.expenseCreate?.expense;
         const userErrors = expResult.data?.expenseCreate?.userErrors;
+        if (userErrors?.length) console.warn(`[process-incoming] ${rowId}: Jobber userErrors:`, JSON.stringify(userErrors));
+        console.log(`[process-incoming] ${rowId}: receiptBlobUrl sent=`, receiptBlobUrl);
         if (expense?.id) {
           jobberExpenseId = expense.id;
           console.log(`[process-incoming] ${rowId}: Jobber expense created: ${jobberExpenseId}`);
