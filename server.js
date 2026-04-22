@@ -821,6 +821,10 @@ function extractFieldsFromLlama(content) {
       if (!desc && lastDesc) desc = lastDesc;
       if (desc) lastDesc = desc;
 
+      // Skip product-code sub-rows (e.g. GESCAN outputs "NPIFWSW ... 2.2440" before the real description row)
+      // A product code row has: single monetary value + description looks like a product code (no spaces)
+      if (nums.length === 1 && /^[A-Z0-9][A-Z0-9/.-]{2,19}$/.test(desc)) continue;
+
       // Qty: integer up to 4 digits; handle both -1 and 1- (trailing minus = accounting negative)
       let qty = null;
       for (let c = priceCells.length - 1; c >= 1; c--) {
