@@ -1544,6 +1544,12 @@ app.post('/api/create-expense', async (req, res) => {
 });
 
 
+// Serve index.html for all non-API routes (VPS mode)
+const path = require('path');
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 module.exports = app;
 
 if (require.main === module) {
