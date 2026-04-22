@@ -768,7 +768,8 @@ function extractFieldsFromLlama(content) {
     if (!/\.\d+$/.test(s)) return null;  // must have at least one decimal digit (handles 2 or 4 dp)
     const n = parseFloat(s);
     // Cap at $100,000 — UPC codes like 783643156609.00 are not prices
-    return (!isNaN(n) && n > 0 && n < 100000) ? n : null;
+    // Use absolute value — credit invoices output negative prices; sign is tracked via qty
+    return (!isNaN(n) && n !== 0 && Math.abs(n) < 100000) ? Math.abs(n) : null;
   };
 
   // Detect line-number cell: small plain integer (≤ 999), no decimal
