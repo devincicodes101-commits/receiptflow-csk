@@ -767,7 +767,8 @@ function extractFieldsFromLlama(content) {
     const s = (cell || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').trim();
     if (!/\.\d+$/.test(s)) return null;  // must have at least one decimal digit (handles 2 or 4 dp)
     const n = parseFloat(s);
-    return (!isNaN(n) && n > 0) ? n : null;
+    // Cap at $100,000 — UPC codes like 783643156609.00 are not prices
+    return (!isNaN(n) && n > 0 && n < 100000) ? n : null;
   };
 
   // Detect line-number cell: small plain integer (≤ 999), no decimal
@@ -869,6 +870,11 @@ function extractFieldsFromLlama(content) {
         total = n;
       }
     }
+  }
+
+  // If total looks like a single line item (< 60% of itemsSum), it's wrong — use itemsSum instead
+  if (total !== null && itemsSum > 0 && Math.abs(total) < itemsSum * 0.6) {
+    total = Math.round(itemsSum * 100) / 100;
   }
 
   if (total === null && itemsSum > 0) {
