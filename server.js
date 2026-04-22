@@ -124,10 +124,12 @@ async function processRowCore(sb, incoming, fileBuffer, mimeType) {
         console.log(`[process-incoming] ${rowId}: uploaded to Vercel Blob: ${receiptBlobUrl}`);
       } catch (blobErr) {
         console.error(`[process-incoming] ${rowId}: Blob upload failed, falling back to file_url:`, blobErr.message);
-        receiptBlobUrl = incoming.file_url || null;
+        receiptBlobUrl = incoming.file_url ||
+          (incoming.storage_path ? `${process.env.SUPABASE_URL}/storage/v1/object/public/receipts/${incoming.storage_path}` : null);
       }
     } else {
-      receiptBlobUrl = incoming.file_url || null;
+      receiptBlobUrl = incoming.file_url ||
+        (incoming.storage_path ? `${process.env.SUPABASE_URL}/storage/v1/object/public/receipts/${incoming.storage_path}` : null);
     }
 
     try {
