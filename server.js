@@ -594,9 +594,9 @@ function extractFieldsFromLlama(content) {
 
   const setLmap = (lbl, val) => {
     if (MONETARY_LABELS.has(lbl)) {
-      const newN = parseFloat((val || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
-      const oldN = parseFloat((lmap[lbl] || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
-      // For monetary totals, keep the larger value (grand total > line item total)
+      const newN = parseFloat((val || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').replace(/^-/, ''));
+      const oldN = parseFloat((lmap[lbl] || '').replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, '').replace(/^-/, ''));
+      // Compare absolute values — tax-inclusive total (807.91) > pre-tax gross (721.35)
       if (!isNaN(newN) && (isNaN(oldN) || newN > oldN)) {
         lmap[lbl] = val;
       }
