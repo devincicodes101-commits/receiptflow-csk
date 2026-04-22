@@ -927,11 +927,17 @@ UNIT PRICE:
 UNIT OF MEASURE:
 - Unit of measure values (MT, EA, EACH, PC, FT, M, LB) belong in the U/M or UNIT column, not as a separate description row.
 
-TRAILING MINUS / CREDIT NOTATION:
+GRAND TOTAL EXTRACTION:
+- The TOTAL to extract is ALWAYS from the final summary row at the very bottom of the document (after all taxes such as GST, PST, HST, Sundry Charges). This is the tax-inclusive total.
+- Never use a line item total or subtotal (e.g. GROSS TOTAL before taxes) as the grand total.
+- The correct total row is the one labelled TOTAL, AMOUNT DUE, INVOICE TOTAL, or BALANCE DUE at the very bottom.
+
+TRAILING MINUS / CREDIT NOTATION (STRICT):
 - Some invoices (e.g. GESCAN) use trailing minus notation where the minus sign comes AFTER the number (e.g. "721.35-", "807.91-", "1-"). This means the value is negative.
-- Always convert trailing minus numbers to standard negative format: "721.35-" → "-721.35", "1-" → "-1".
-- Apply this to ALL columns: QTY, NET PRICE, TOTAL, GROSS TOTAL, G.S.T., P.S.T., and the grand total row.
-- If a document is labelled "CREDIT", "RETURN", or "CREDIT - DO NOT PAY", all monetary totals are negative.`;
+- STRICT RULE: If a number has a trailing minus in the original document, you MUST output it as a negative number (e.g. "807.91-" → "-807.91"). Never drop the minus sign.
+- STRICT RULE: If a number does NOT have a trailing minus or a leading minus in the original document, you MUST output it as a positive number. Never add a minus sign that is not printed.
+- Apply this to ALL columns: QTY, NET PRICE, TOTAL, GROSS TOTAL, G.S.T., P.S.T., and the grand total.
+- If the document is labelled "CREDIT", "RETURN", or "CREDIT - DO NOT PAY", verify all totals have trailing minus signs and output them as negative.`;
 
   if (mimeType === 'application/pdf') {
     // Upload via Files API so Gemini processes every page of the PDF
