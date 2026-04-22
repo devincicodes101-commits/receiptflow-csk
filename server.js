@@ -925,7 +925,13 @@ UNIT PRICE:
 - Unit price is ALWAYS less than or equal to the line total (AMOUNT/EXT PRICE) for that row.
 
 UNIT OF MEASURE:
-- Unit of measure values (MT, EA, EACH, PC, FT, M, LB) belong in the U/M or UNIT column, not as a separate description row.`;
+- Unit of measure values (MT, EA, EACH, PC, FT, M, LB) belong in the U/M or UNIT column, not as a separate description row.
+
+TRAILING MINUS / CREDIT NOTATION:
+- Some invoices (e.g. GESCAN) use trailing minus notation where the minus sign comes AFTER the number (e.g. "721.35-", "807.91-", "1-"). This means the value is negative.
+- Always convert trailing minus numbers to standard negative format: "721.35-" → "-721.35", "1-" → "-1".
+- Apply this to ALL columns: QTY, NET PRICE, TOTAL, GROSS TOTAL, G.S.T., P.S.T., and the grand total row.
+- If a document is labelled "CREDIT", "RETURN", or "CREDIT - DO NOT PAY", all monetary totals are negative.`;
 
   if (mimeType === 'application/pdf') {
     // Upload via Files API so Gemini processes every page of the PDF
