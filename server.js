@@ -841,19 +841,20 @@ function extractFieldsFromLlama(content) {
   }
 
   if (total === null) {
-    // Prefer the most specific total labels first, then fall back to generic TOTAL
     const TOTAL_LABELS = [
       'GRAND TOTAL', 'INVOICE TOTAL', 'AMOUNT DUE', 'BALANCE DUE',
-      'TOTAL DUE', 'TOTAL', 'SUBTOTAL'
+      'TOTAL DUE', 'TOTAL', 'SUBTOTAL', 'GROSS TOTAL'
     ];
 
+    // Pick the largest absolute value across all candidates (tax-inclusive total > pre-tax subtotal)
+    let bestAbs = 0;
     for (const lbl of TOTAL_LABELS) {
       const rawTotal = lmap[lbl];
       if (!rawTotal) continue;
       const n = parseFloat(rawTotal.replace(/[$,]/g, '').replace(/\s*[-+]\s*$/, ''));
-      if (!isNaN(n) && n > 0) {
+      if (!isNaN(n) && Math.abs(n) > bestAbs) {
+        bestAbs = Math.abs(n);
         total = n;
-        break;
       }
     }
   }
@@ -926,11 +927,6 @@ UNIT PRICE:
 
 UNIT OF MEASURE:
 - Unit of measure values (MT, EA, EACH, PC, FT, M, LB) belong in the U/M or UNIT column, not as a separate description row.
-
-GRAND TOTAL EXTRACTION:
-- The TOTAL to extract is ALWAYS from the final summary row at the very bottom of the document (after all taxes such as GST, PST, HST, Sundry Charges). This is the tax-inclusive total.
-- Never use a line item total or subtotal (e.g. GROSS TOTAL before taxes) as the grand total.
-- The correct total row is the one labelled TOTAL, AMOUNT DUE, INVOICE TOTAL, or BALANCE DUE at the very bottom.
 
 TRAILING MINUS / CREDIT NOTATION (STRICT):
 - Some invoices (e.g. GESCAN) use trailing minus notation where the minus sign comes AFTER the number (e.g. "721.35-", "807.91-", "1-"). This means the value is negative.
