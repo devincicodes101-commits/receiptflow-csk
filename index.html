@@ -177,6 +177,21 @@
         .mobile-menu-btn { display: none !important; }
         .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 998; }
 
+        /* History master-detail layout */
+        .history-layout { display: flex; height: 100%; overflow: hidden; }
+        .history-list-panel { width: 340px; min-width: 340px; border-right: 1px solid #E2E8F0; display: flex; flex-direction: column; background: #fff; overflow: hidden; flex-shrink: 0; }
+        .history-preview-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #F8FAFC; min-width: 0; }
+        .hist-body { flex: 1; display: flex; overflow: hidden; }
+        .hist-doc-area { flex: 1; overflow: hidden; min-width: 0; }
+        .hist-right-panel { width: 192px; min-width: 192px; border-left: 1px solid #E2E8F0; overflow-y: auto; background: #fff; flex-shrink: 0; }
+
+        /* Review Queue detail inner layout */
+        .rq-detail-inner { display: flex; gap: 22px; max-width: 960px; }
+        .rq-preview-col { width: 320px; flex-shrink: 0; }
+
+        /* Mobile back button — hidden on desktop */
+        .mobile-back-btn { display: none !important; }
+
         @media (max-width: 768px) {
             /* Sidebar becomes a slide-in drawer */
             .sidebar { position: fixed; top: 0; left: -240px; height: 100vh; z-index: 999; transition: left 0.25s ease; width: 240px !important; min-width: 240px !important; }
@@ -185,14 +200,15 @@
             .mobile-menu-btn { display: flex !important; }
 
             /* Content */
-            #content { padding: 14px !important; }
-            header { padding: 0 14px !important; }
+            #content { padding: 12px !important; }
+            header { padding: 0 12px !important; }
 
             /* Stats: 2 columns */
-            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
             .stat-value { font-size: 18px; }
+            .stat-card { padding: 14px; }
 
-            /* Review: stack vertically */
+            /* Review Queue upload: stack vertically */
             .review-layout { flex-direction: column; }
             .review-sidebar { width: 100% !important; }
             .review-sidebar .receipt-img-wrap { height: 220px !important; }
@@ -210,8 +226,28 @@
             /* Upload zone */
             .upload-zone { padding: 36px 20px; }
 
-            /* History search bar */
-            #history-search { width: 140px !important; }
+            /* History: mobile master-detail */
+            .history-layout { flex-direction: column; height: auto; min-height: 100%; overflow: visible; }
+            .history-list-panel { width: 100% !important; min-width: 0 !important; border-right: none; border-bottom: 1px solid #E2E8F0; flex-shrink: 0; max-height: 45vh; }
+            .history-list-panel.mobile-hide { display: none !important; }
+            .history-preview-panel { display: none; overflow-y: auto; }
+            .history-preview-panel.mobile-show { display: flex; }
+            .hist-body { flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+            .hist-doc-area { min-height: 260px; flex: none; overflow: hidden; }
+            .hist-right-panel { width: 100% !important; min-width: 0 !important; border-left: none; border-top: 1px solid #E2E8F0; }
+            .mobile-back-btn { display: flex !important; }
+
+            /* Review Queue detail: stack vertically */
+            .rq-detail-inner { flex-direction: column; }
+            .rq-preview-col { width: 100% !important; }
+            .rq-preview-col .receipt-img-wrap { height: 220px !important; }
+
+            /* Breadcrumb: truncate long IDs */
+            #breadcrumb { font-size: 12px; max-width: calc(100vw - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+            /* Tables: horizontal scroll */
+            .data-table { font-size: 12px; }
+            .data-table th, .data-table td { padding: 8px 10px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -1148,9 +1184,9 @@ function historyHTML() {
         </div>`;
     }).join('');
 
-    return `<div style="display:flex;height:100%;overflow:hidden;">
+    return `<div class="history-layout">
         <!-- List panel -->
-        <div style="width:340px;min-width:340px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
+        <div class="history-list-panel" id="history-list-panel">
             <div style="padding:14px 14px 12px;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
                 <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;">
                     <div style="font-size:14px;font-weight:700;color:#0F172A;">Processing history</div>
@@ -1179,7 +1215,7 @@ function historyHTML() {
             </div>
         </div>
         <!-- Preview pane -->
-        <div id="history-preview-pane" style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#F8FAFC;min-width:0;">
+        <div id="history-preview-pane" class="history-preview-panel">
             ${selRec ? historyPreviewPaneHTML(selRec) : historyEmptyStateHTML()}
         </div>
     </div>`;
@@ -1200,6 +1236,7 @@ function historyPreviewPaneHTML(rec) {
     return `
         <div style="padding:11px 18px;background:#fff;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:12px;">
             <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                <button class="mobile-back-btn" onclick="historyMobileBack()"><i class="fa-solid fa-arrow-left"></i> Back</button>
                 <code style="font-size:11.5px;color:#F97316;background:#FFF7ED;padding:3px 8px;border-radius:5px;font-weight:700;white-space:nowrap;">${escHtml(rec.id)}</code>
                 <span style="font-size:13px;font-weight:600;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(rec.vendor||'—')}</span>
                 <span style="color:#E2E8F0;">|</span>
@@ -1210,7 +1247,7 @@ function historyPreviewPaneHTML(rec) {
                 <button class="btn btn-secondary btn-sm" onclick="deleteReceipt('${rec.id}')" title="Delete receipt"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>
             </div>
         </div>
-        <div style="flex:1;display:flex;overflow:hidden;">
+        <div class="hist-body">
             ${historyDocHTML(rec)}
             ${historyDetailPanelHTML(rec)}
         </div>`;
@@ -1222,13 +1259,13 @@ function historyDocHTML(rec) {
         const url = rec.receiptBlobUrl;
         const isImg = /\.(jpe?g|png|webp|gif)(\?|$)/i.test(url);
         if (isImg) {
-            return `<div style="flex:1;overflow:auto;padding:20px;background:#F8FAFC;display:flex;align-items:flex-start;justify-content:center;min-width:0;">
+            return `<div class="hist-doc-area" style="overflow:auto;padding:20px;background:#F8FAFC;display:flex;align-items:flex-start;justify-content:center;">
                 <img src="${escHtml(url)}" alt="Receipt"
                     style="max-width:100%;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.1);border:1px solid #E2E8F0;">
             </div>`;
         }
         // PDF: fetch and re-wrap with correct MIME so browser renders it inline
-        return `<div style="flex:1;overflow:hidden;padding:20px;background:#F8FAFC;display:flex;flex-direction:column;min-width:0;">
+        return `<div class="hist-doc-area" style="overflow:hidden;padding:20px;background:#F8FAFC;display:flex;flex-direction:column;">
             <div id="hist-pdf-wrap" style="flex:1;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);background:#fff;">
                 <div id="hist-pdf-loading" style="flex:1;display:flex;align-items:center;justify-content:center;gap:10px;color:#64748B;font-size:13px;">
                     <div class="spinner" style="width:22px;height:22px;border-width:2px;"></div> Loading PDF…
@@ -1268,7 +1305,7 @@ function historyDocHTML(rec) {
     const subtotal = rec.amount / 1.05;
     const gst = rec.amount - subtotal;
     const unitColHeader = isMockData ? 'Unit' : 'Unit Price';
-    return `<div style="flex:1;overflow-y:auto;padding:20px;background:#F8FAFC;display:flex;justify-content:center;min-width:0;">
+    return `<div class="hist-doc-area" style="overflow-y:auto;padding:20px;background:#F8FAFC;display:flex;justify-content:center;">
         <div style="width:100%;max-width:500px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,0.05);flex-shrink:0;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid #F1F5F9;">
                 <div>
@@ -1318,7 +1355,7 @@ function historyDetailPanelHTML(rec) {
         <span style="font-size:10px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">${lbl}</span>
         <span style="font-size:12px;color:#374151;line-height:1.4;">${val}</span>
     </div>`;
-    return `<div style="width:192px;min-width:192px;border-left:1px solid #E2E8F0;overflow-y:auto;background:#fff;flex-shrink:0;">
+    return `<div class="hist-right-panel">
         <div style="padding:14px 14px 12px;border-bottom:1px solid #F1F5F9;">
             <div style="font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Details</div>
             <div style="display:flex;flex-direction:column;gap:9px;">
@@ -1373,6 +1410,19 @@ function selectHistoryReceipt(id) {
     });
     const pane = document.getElementById('history-preview-pane');
     if (pane) { pane.innerHTML = historyPreviewPaneHTML(rec); initHistoryPdf(); }
+    // Mobile: hide list, show preview
+    if (window.innerWidth <= 768) {
+        const listPanel = document.getElementById('history-list-panel');
+        if (listPanel) { listPanel.classList.add('mobile-hide'); }
+        if (pane) { pane.classList.add('mobile-show'); }
+    }
+}
+
+function historyMobileBack() {
+    const listPanel = document.getElementById('history-list-panel');
+    const pane = document.getElementById('history-preview-pane');
+    if (listPanel) { listPanel.classList.remove('mobile-hide'); }
+    if (pane) { pane.classList.remove('mobile-show'); }
 }
 
 function initHistoryPdf() {
@@ -2447,9 +2497,9 @@ function reviewQueueHTML() {
         const isPdf = sel.file_type === 'pdf';
 
         detailPanel = `<div style="flex:1;padding:24px;overflow-y:auto;">
-            <div style="display:flex;gap:22px;max-width:960px;">
+            <div class="rq-detail-inner">
                 <!-- Preview -->
-                <div style="width:320px;flex-shrink:0;">
+                <div class="rq-preview-col">
                     <div class="receipt-img-wrap" style="height:440px;">
                         ${isPdf
                             ? (sel.file_url
