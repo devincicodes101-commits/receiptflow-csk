@@ -750,8 +750,12 @@ function extractFieldsFromLlama(content) {
   }
 
   // Fallback: scan raw text for P.O. / PO number patterns
+  // Handles "PO Number\n1180", "YOUR P.O. NO 1456", "PO Number | 1180" etc.
   if (!jobNo) {
-    const poMatch = content.match(/(?:YOUR\s+P\.?O\.?\s*(?:NO|NUMBER|#)|P\.?O\.?\s*(?:NO|NUMBER|#)|PO\s*(?:NO|NUMBER|#))\s*[:\s]+(\d{3,7})\b/i);
+    const poMatch =
+      content.match(/\bP\.?\s*O\.?\s*(?:Number|No|NO|#|NUM|NUMBER)\b[^\d]{0,120}?(\d{3,7})\b/i) ||
+      content.match(/\bYour\s+P\.?\s*O\.?\s*(?:No|NO|Number)\b[^\d]{0,120}?(\d{3,7})\b/i) ||
+      content.match(/\bPurchase\s*Order\b[^\d]{0,120}?(\d{3,7})\b/i);
     if (poMatch) jobNo = poMatch[1];
   }
 
