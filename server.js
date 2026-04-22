@@ -833,6 +833,14 @@ function extractFieldsFromLlama(content) {
         }
       }
 
+      // If qty still null but we have unit price and line total, derive qty mathematically
+      if (qty === null && netPrice && netPrice > 0 && lineTotal > 0) {
+        const derived = Math.round(lineTotal / netPrice);
+        if (derived >= 1 && derived <= 9999 && Math.abs(derived * netPrice - lineTotal) < 0.02) {
+          qty = derived;
+        }
+      }
+
       if (lineTotal > 0 && desc.length > 1) {
         items.push({ lineNo, desc, qty, unit: netPrice, total: lineTotal });
         itemsSum += lineTotal;
@@ -856,14 +864,6 @@ function extractFieldsFromLlama(content) {
         bestAbs = Math.abs(n);
         total = n;
       }
-    }
-  }
-
-  // Regex fallback: find the LAST "TOTAL" value in the document (grand total is at the bottom)
-  if (total === null) {
-    const allTotals = [...content.matchAll(/\bTOTAL\b[\s:$]*([\d][\d,]*\.\d{2})\s*[-]?/gi)];
-    if (allTotals.length > 0) {
-      total = parseFloat(allTotals[allTotals.length - 1][1].replace(/,/g, ''));
     }
   }
 
