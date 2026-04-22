@@ -814,10 +814,11 @@ function extractFieldsFromLlama(content) {
       for (const cell of priceCells) {
         const cleaned = cell.replace(/\s+\d+$/, '').replace(/\s*[-+]\s*$/, '').trim();
         const isNumericOrCode =
-          /^\$?[\d,.]+$/.test(cleaned) ||   // number or price
+          /^\$?-?[\d,.]+$/.test(cleaned) ||  // number or price (including negative like -721.35)
           cleaned.length === 0 ||
           /^(EA|EACH|PC|PCS|PR|FT|M|LB|KG|BOX|PKG|SET|LOT|RL|CTN|MT)$/i.test(cleaned) || // UoM
-          /^\d{4,}$/.test(cleaned);           // catalog code (4+ digit integer)
+          /^\d{4,}$/.test(cleaned) ||         // catalog code (4+ digit integer)
+          /^[A-Z][A-Z0-9]{3,19}$/.test(cleaned); // product code (all caps, no spaces, e.g. FLOX3)
 
         if (!isNumericOrCode && cleaned.length > desc.length) desc = cleaned;
       }
