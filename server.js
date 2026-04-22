@@ -710,6 +710,7 @@ function extractFieldsFromLlama(content) {
 
   const JOB_LABELS = [
     'YOUR P.O. NO', 'YOUR P.O.NO', 'P.O. NO', 'P.O.NO', 'PO NO', 'PO #',
+    'PO NUMBER', 'PO NUMBER:', 'PURCHASE ORDER NUMBER',
     'PURCHASE ORDER', 'PURCHASE ORDER NO', 'CUSTOMER PO', 'CUST PO',
     'JOB NO', 'JOB #', 'JOB NUMBER', 'JOB ID',
     'WORK ORDER', 'WORK ORDER NO', 'WO #', 'W.O. NO',
@@ -738,6 +739,12 @@ function extractFieldsFromLlama(content) {
       jobNo = m[1];
       break;
     }
+  }
+
+  // Fallback: scan raw text for P.O. / PO number patterns
+  if (!jobNo) {
+    const poMatch = content.match(/(?:YOUR\s+P\.?O\.?\s*(?:NO|NUMBER|#)|P\.?O\.?\s*(?:NO|NUMBER|#)|PO\s*(?:NO|NUMBER|#))\s*[:\s]+(\d{3,7})\b/i);
+    if (poMatch) jobNo = poMatch[1];
   }
 
   // Fallback: scan raw text for NNNN-RETURN / NNNN-CREDIT patterns
