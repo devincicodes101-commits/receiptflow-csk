@@ -970,11 +970,13 @@ function reviewHTML() {
             <div class="review-sidebar">
                 <div class="receipt-img-wrap" style="height:500px;">
                     ${r.isPdf
-                        ? `<div style="text-align:center;padding:40px 20px;">
-                             <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
-                             <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
-                             <div style="font-size:11.5px;color:#9CA3AF;">Text extracted and analyzed by Gemini</div>
-                           </div>`
+                        ? (r.receiptBlobUrl
+                            ? `<iframe src="${r.receiptBlobUrl}" style="width:100%;height:100%;border:none;border-radius:8px;" title="PDF Preview"></iframe>`
+                            : `<div style="text-align:center;padding:40px 20px;">
+                                 <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
+                                 <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
+                                 <div style="font-size:11.5px;color:#9CA3AF;">Text extracted and analyzed by Gemini</div>
+                               </div>`)
                         : `<img src="${r.imageDataUrl || ''}" alt="Receipt"
                                onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9CA3AF;font-size:13px;\\'>Preview unavailable</div>'">`
                     }
@@ -2460,11 +2462,13 @@ function reviewQueueHTML() {
                 <div style="width:320px;flex-shrink:0;">
                     <div class="receipt-img-wrap" style="height:440px;">
                         ${isPdf
-                            ? `<div style="text-align:center;padding:40px 20px;">
-                                 <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
-                                 <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
-                                 <div style="font-size:11.5px;color:#9CA3AF;">Text extracted by Gemini Vision</div>
-                               </div>`
+                            ? (sel.file_url
+                                ? `<iframe src="${escHtml(sel.file_url)}" style="width:100%;height:100%;border:none;border-radius:8px;" title="PDF Preview"></iframe>`
+                                : `<div style="text-align:center;padding:40px 20px;">
+                                     <i class="fa-solid fa-file-pdf" style="font-size:52px;color:#DC2626;margin-bottom:14px;display:block;"></i>
+                                     <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:4px;">PDF Invoice</div>
+                                     <div style="font-size:11.5px;color:#9CA3AF;">Text extracted by Gemini Vision</div>
+                                   </div>`)
                             : `<img src="${escHtml(sel.file_url||'')}" alt="Receipt"
                                    onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9CA3AF;font-size:13px;\\'>Preview unavailable</div>'">`
                         }
