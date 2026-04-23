@@ -300,6 +300,7 @@
             .rq-preview-col { width: 100% !important; max-width: 100% !important; }
             .rq-preview-col .receipt-img-wrap { height: 420px !important; max-width: 100% !important; overflow: auto !important; }
             .rq-preview-col iframe { width: 100% !important; height: 420px !important; min-width: 100%; }
+            .rq-fields-col { flex: none !important; width: 100% !important; min-width: 0 !important; height: auto !important; }
 
             /* ── Settings ── */
             .settings-grid { grid-template-columns: 1fr !important; }
@@ -2637,7 +2638,7 @@ function reviewQueueHTML() {
                     </div>
                 </div>
                 <!-- Fields -->
-                <div style="flex:1;min-width:0;">
+                <div class="rq-fields-col" style="flex:1;min-width:0;">
                     <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:16px;">Extracted Receipt Details</div>
                     <div class="form-grid-2">
                         <div>
