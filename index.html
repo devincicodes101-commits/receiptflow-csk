@@ -302,12 +302,16 @@
             /* Selection → hide list, show detail only */
             .rq-has-selection .rq-list-panel { display: none !important; }
             .rq-list-panel { display: block !important; width: 100% !important; min-width: 0 !important; overflow-y: auto; border-right: none !important; }
-            .rq-detail-panel { display: block !important; height: auto !important; overflow: visible !important; }
+            .rq-detail-panel { display: block !important; height: auto !important; overflow: visible !important; padding: 14px !important; }
             .rq-detail-inner { display: block !important; max-width: 100% !important; overflow: visible !important; }
-            .rq-preview-col { display: block !important; width: 100% !important; max-width: 100% !important; margin-bottom: 16px; }
-            .rq-preview-col .receipt-img-wrap { height: 300px !important; max-width: 100% !important; overflow: auto !important; }
-            .rq-preview-col iframe { width: 100% !important; height: 300px !important; }
+            .rq-preview-col { display: block !important; width: 100% !important; max-width: 100% !important; margin-bottom: 10px; }
+            .rq-preview-col .receipt-img-wrap { height: 260px !important; max-width: 100% !important; overflow: auto !important; }
+            .rq-preview-col iframe { width: 100% !important; height: 260px !important; }
             .rq-fields-col { display: block !important; width: 100% !important; height: auto !important; }
+            .rq-fields-col > div:first-child { font-size: 14px !important; margin-bottom: 10px !important; }
+            .rq-fields-col .form-grid-2 { gap: 8px !important; margin-bottom: 10px !important; }
+            .rq-fields-col .form-label { margin-bottom: 2px !important; }
+            .rq-fields-col .form-input { padding: 6px 10px !important; font-size: 13px !important; }
 
             /* ── Settings ── */
             .settings-grid { grid-template-columns: 1fr !important; }
@@ -2623,7 +2627,7 @@ function reviewQueueHTML() {
         const isPdf = sel.file_type === 'pdf';
 
         detailPanel = `<div class="rq-detail-panel" style="flex:1;padding:24px;overflow-y:auto;">
-            <button class="rq-mobile-back btn btn-ghost" onclick="queueMobileBack()" style="margin-bottom:14px;gap:6px;padding:6px 10px;font-size:13px;">
+            <button class="rq-mobile-back btn btn-ghost" onclick="queueMobileBack()" style="margin-bottom:8px;gap:6px;padding:5px 10px;font-size:13px;">
                 <i class="fa-solid fa-arrow-left"></i> Back to List
             </button>
             <div class="rq-detail-inner">
