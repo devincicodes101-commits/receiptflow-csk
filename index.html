@@ -192,6 +192,7 @@
 
         /* Mobile back button — hidden on desktop */
         .mobile-back-btn { display: none !important; }
+        .rq-mobile-back { display: none !important; }
 
         @media (max-width: 768px) {
             /* ── Sidebar drawer ── */
@@ -292,9 +293,15 @@
             .hist-detail-header > div:first-child { gap: 8px !important; }
             .hist-header-vendor, .hist-header-sep, .hist-header-date { display: none !important; }
 
-            /* ── Review Queue ── */
+            /* ── Review Queue: mobile master-detail ── */
+            .rq-mobile-back { display: flex !important; }
             .rq-outer { display: block !important; height: auto !important; overflow: visible !important; }
-            .rq-list-panel { display: block !important; width: 100% !important; min-width: 0 !important; max-height: 35vh; overflow-y: auto !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; }
+            /* No selection → show full-height list, hide detail */
+            .rq-outer:not(.rq-has-selection) .rq-list-panel { max-height: none !important; border-right: none !important; }
+            .rq-outer:not(.rq-has-selection) .rq-detail-panel { display: none !important; }
+            /* Selection → hide list, show detail only */
+            .rq-has-selection .rq-list-panel { display: none !important; }
+            .rq-list-panel { display: block !important; width: 100% !important; min-width: 0 !important; overflow-y: auto; border-right: none !important; }
             .rq-detail-panel { display: block !important; height: auto !important; overflow: visible !important; }
             .rq-detail-inner { display: block !important; max-width: 100% !important; overflow: visible !important; }
             .rq-preview-col { display: block !important; width: 100% !important; max-width: 100% !important; margin-bottom: 16px; }
@@ -2534,7 +2541,7 @@ function updateReviewBadge() {
 
 function reviewQueueHTML() {
     const items = state.reviewItems;
-    if (!state.selectedQueueItemId && items.length > 0) {
+    if (!state.selectedQueueItemId && items.length > 0 && window.innerWidth > 768) {
         state.selectedQueueItemId = items[0].id;
     }
     const sel = items.find(i => i.id === state.selectedQueueItemId) || null;
@@ -2616,6 +2623,9 @@ function reviewQueueHTML() {
         const isPdf = sel.file_type === 'pdf';
 
         detailPanel = `<div class="rq-detail-panel" style="flex:1;padding:24px;overflow-y:auto;">
+            <button class="rq-mobile-back btn btn-ghost" onclick="queueMobileBack()" style="margin-bottom:14px;gap:6px;padding:6px 10px;font-size:13px;">
+                <i class="fa-solid fa-arrow-left"></i> Back to List
+            </button>
             <div class="rq-detail-inner">
                 <!-- Preview -->
                 <div class="rq-preview-col">
@@ -2730,7 +2740,7 @@ function reviewQueueHTML() {
     const progressPct = items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
     const barColor = progressPct === 100 ? '#059669' : (failedCount > 0 && pendingCount === 0 && processingCount === 0 ? '#DC2626' : '#F97316');
 
-    return `<div class="rq-outer" style="display:flex;height:100%;overflow:hidden;">
+    return `<div class="rq-outer${sel ? ' rq-has-selection' : ''}" style="display:flex;height:100%;overflow:hidden;">
         <!-- List panel -->
         <div class="rq-list-panel" style="width:320px;min-width:320px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
             <div style="padding:14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
@@ -2762,6 +2772,11 @@ function selectQueueItem(id) {
     state.selectedQueueItemId = id;
     state.savingQueueItem = false;
     state.postingQueueItem = false;
+    render();
+}
+
+function queueMobileBack() {
+    state.selectedQueueItemId = null;
     render();
 }
 
