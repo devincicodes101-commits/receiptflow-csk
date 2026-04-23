@@ -193,61 +193,117 @@
         .mobile-back-btn { display: none !important; }
 
         @media (max-width: 768px) {
-            /* Sidebar becomes a slide-in drawer */
+            /* ── Sidebar drawer ── */
             .sidebar { position: fixed; top: 0; left: -240px; height: 100vh; z-index: 999; transition: left 0.25s ease; width: 240px !important; min-width: 240px !important; }
             .sidebar.open { left: 0; box-shadow: 4px 0 24px rgba(0,0,0,0.4); }
             .sidebar-overlay.show { display: block; }
             .mobile-menu-btn { display: flex !important; }
 
-            /* Content */
+            /* ── Layout ── */
             #content { padding: 12px !important; }
             header { padding: 0 12px !important; }
 
-            /* Stats: 2 columns */
+            /* ── Stats grid: 2 columns ── */
             .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
             .stat-value { font-size: 18px; }
-            .stat-card { padding: 14px; }
+            .stat-card { padding: 12px; gap: 10px; }
+            .stat-icon { width: 36px; height: 36px; font-size: 15px; }
 
-            /* Review Queue upload: stack vertically */
+            /* ── Gmail stats: 2 columns ── */
+            #gmail-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+            #gmail-stats .stat-card { padding: 10px 12px; }
+            #gmail-stats .stat-value { font-size: 22px; }
+
+            /* ── Gmail table → card layout ── */
+            .gmail-table-wrap { overflow-x: visible !important; }
+            .gmail-table thead { display: none !important; }
+            .gmail-table tbody tr {
+                display: block;
+                background: #fff;
+                border: 1px solid #F1F5F9;
+                border-radius: 10px;
+                padding: 12px;
+                margin-bottom: 8px;
+            }
+            .gmail-table tbody td {
+                display: flex;
+                align-items: flex-start;
+                gap: 6px;
+                padding: 3px 0;
+                border: none !important;
+                font-size: 12px;
+                max-width: 100% !important;
+                white-space: normal !important;
+                overflow: visible !important;
+                text-overflow: unset !important;
+            }
+            .gmail-table tbody td::before {
+                content: attr(data-label);
+                font-size: 10px;
+                font-weight: 700;
+                color: #94A3B8;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                white-space: nowrap;
+                min-width: 52px;
+                padding-top: 2px;
+            }
+            .gmail-table tbody td:empty,
+            .gmail-table tbody td[data-label=""] { display: none; }
+            .gmail-table tbody td:last-child { margin-top: 6px; }
+            .gmail-table tbody tr:hover td { background: transparent !important; }
+
+            /* ── Upload: stack ── */
             .review-layout { flex-direction: column; }
             .review-sidebar { width: 100% !important; }
-            .review-sidebar .receipt-img-wrap { height: 220px !important; }
+            .review-sidebar .receipt-img-wrap { height: 200px !important; }
 
-            /* Form: single column */
+            /* ── Forms ── */
             .form-grid-2 { grid-template-columns: 1fr; }
+            .form-input, select.form-input { width: 100% !important; }
 
-            /* Action buttons: full width */
-            .action-bar { gap: 8px; }
-            .action-bar .btn { flex: 1; justify-content: center; min-width: 0; }
+            /* ── Action buttons ── */
+            .action-bar { gap: 8px; flex-wrap: wrap; }
+            .action-bar .btn { flex: 1; justify-content: center; min-width: 120px; }
 
-            /* Login */
+            /* ── Login ── */
             .login-card { width: calc(100vw - 32px); padding: 28px 20px; border-radius: 10px; }
 
-            /* Upload zone */
-            .upload-zone { padding: 36px 20px; }
+            /* ── Upload zone ── */
+            .upload-zone { padding: 32px 16px; }
 
-            /* History: mobile master-detail */
+            /* ── History: master-detail ── */
             .history-layout { flex-direction: column; height: auto; min-height: 100%; overflow: visible; }
-            .history-list-panel { width: 100% !important; min-width: 0 !important; border-right: none; border-bottom: 1px solid #E2E8F0; flex-shrink: 0; max-height: 45vh; }
+            .history-list-panel { width: 100% !important; min-width: 0 !important; border-right: none; border-bottom: 1px solid #E2E8F0; flex-shrink: 0; max-height: 40vh; }
             .history-list-panel.mobile-hide { display: none !important; }
             .history-preview-panel { display: none; overflow-y: auto; }
             .history-preview-panel.mobile-show { display: flex; }
             .hist-body { flex-direction: column; overflow-y: auto; overflow-x: hidden; }
-            .hist-doc-area { min-height: 260px; flex: none; overflow: hidden; }
+            .hist-doc-area { min-height: 240px; flex: none; overflow: hidden; }
             .hist-right-panel { width: 100% !important; min-width: 0 !important; border-left: none; border-top: 1px solid #E2E8F0; }
             .mobile-back-btn { display: flex !important; }
 
-            /* Review Queue detail: stack vertically */
+            /* ── Review Queue ── */
+            .rq-list-panel { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; max-height: 42vh; overflow-y: auto; }
+            .rq-main-panel { flex-direction: column; }
             .rq-detail-inner { flex-direction: column; }
             .rq-preview-col { width: 100% !important; }
-            .rq-preview-col .receipt-img-wrap { height: 220px !important; }
+            .rq-preview-col .receipt-img-wrap { height: 200px !important; }
 
-            /* Breadcrumb: truncate long IDs */
+            /* ── Line items table ── */
+            .items-table { font-size: 11px; }
+            .items-table th, .items-table td { padding: 6px 8px !important; }
+            .items-table .col-desc { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+            /* ── Breadcrumb ── */
             #breadcrumb { font-size: 12px; max-width: calc(100vw - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-            /* Tables: horizontal scroll */
+            /* ── Data tables ── */
             .data-table { font-size: 12px; }
             .data-table th, .data-table td { padding: 8px 10px; }
+
+            /* ── Misc ── */
+            .settings-section { padding-bottom: 16px; margin-bottom: 16px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -1535,8 +1591,8 @@ function gmailHTML() {
 
         <!-- Table -->
         <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
-            <div class="table-wrap">
-                <table class="data-table">
+            <div class="table-wrap gmail-table-wrap">
+                <table class="data-table gmail-table">
                     <thead><tr>
                         <th>From</th>
                         <th>Subject</th>
@@ -1651,13 +1707,13 @@ async function loadGmailReceipts() {
     };
 
     tbody.innerHTML = gmailRows.map(r => `<tr>
-        <td style="font-size:12px;color:#374151;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_from||'').replace(/"/g,'&quot;')}">${r.email_from || '—'}</td>
-        <td style="font-size:12px;color:#374151;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_subject||'').replace(/"/g,'&quot;')}">${r.email_subject || '—'}</td>
-        <td style="font-size:12px;font-family:monospace;color:#6B7280;">${r.file_name || '—'}</td>
-        <td style="font-size:11.5px;color:#6B7280;white-space:nowrap;">${r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-        <td>${statusBadge(r)}</td>
-        <td style="font-size:11.5px;color:#DC2626;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.error||'').replace(/"/g,'&quot;')}">${r.error || ''}</td>
-        <td>${r.status === 'pending' || r.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="processSingleRow('${r.id}')"><i class="fa-solid fa-play" style="font-size:10px;"></i> Run</button>` : ''}</td>
+        <td data-label="From" style="font-size:12px;color:#374151;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_from||'').replace(/"/g,'&quot;')}">${r.email_from || '—'}</td>
+        <td data-label="Subject" style="font-size:12px;color:#374151;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.email_subject||'').replace(/"/g,'&quot;')}">${r.email_subject || '—'}</td>
+        <td data-label="File" style="font-size:12px;font-family:monospace;color:#6B7280;">${r.file_name || '—'}</td>
+        <td data-label="Received" style="font-size:11.5px;color:#6B7280;white-space:nowrap;">${r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+        <td data-label="Status">${statusBadge(r)}</td>
+        <td data-label="Error" style="font-size:11.5px;color:#DC2626;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.error||'').replace(/"/g,'&quot;')}">${r.error || ''}</td>
+        <td data-label="">${r.status === 'pending' || r.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="processSingleRow('${r.id}')"><i class="fa-solid fa-play" style="font-size:10px;"></i> Run</button>` : ''}</td>
     </tr>`).join('');
 }
 
@@ -2655,7 +2711,7 @@ function reviewQueueHTML() {
 
     return `<div style="display:flex;height:100%;overflow:hidden;">
         <!-- List panel -->
-        <div style="width:320px;min-width:320px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
+        <div class="rq-list-panel" style="width:320px;min-width:320px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
             <div style="padding:14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
                 <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
                     <div style="font-size:14px;font-weight:700;color:#0F172A;">Review Queue</div>
