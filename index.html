@@ -149,8 +149,9 @@
         .fade-in { animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-        .receipt-img-wrap { background: #F3F4F6; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #E5E7EB; }
+        .receipt-img-wrap { background: #F3F4F6; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #E5E7EB; max-width: 100%; }
         .receipt-img-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .receipt-img-wrap iframe { max-width: 100%; }
 
         .settings-section { border-bottom: 1px solid #E5E7EB; padding-bottom: 22px; margin-bottom: 22px; }
         .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
@@ -272,23 +273,29 @@
             /* ── Upload zone ── */
             .upload-zone { padding: 32px 16px; }
 
+            /* ── Prevent any horizontal overflow globally on mobile ── */
+            #app, #content, .fade-in { max-width: 100vw; overflow-x: hidden; }
+
             /* ── History: master-detail ── */
             .history-layout { flex-direction: column; height: auto; min-height: 100%; overflow: visible; }
             .history-list-panel { width: 100% !important; min-width: 0 !important; border-right: none; border-bottom: 1px solid #E2E8F0; flex-shrink: 0; max-height: 40vh; }
             .history-list-panel.mobile-hide { display: none !important; }
-            .history-preview-panel { display: none; overflow-y: auto; }
-            .history-preview-panel.mobile-show { display: flex; }
-            .hist-body { flex-direction: column; overflow-y: auto; overflow-x: hidden; }
-            .hist-doc-area { min-height: 240px; flex: none; overflow: hidden; }
+            .history-preview-panel { display: none; overflow-y: auto; overflow-x: hidden; max-width: 100vw; }
+            .history-preview-panel.mobile-show { display: flex; flex-direction: column; }
+            .hist-body { flex-direction: column; overflow-y: auto; overflow-x: hidden; max-width: 100%; }
+            .hist-doc-area { min-height: 260px; height: 260px; flex: none; overflow: hidden; max-width: 100%; width: 100%; }
+            .hist-doc-area iframe, .hist-doc-area img { max-width: 100% !important; width: 100% !important; }
+            #hist-pdf-wrap { max-width: 100% !important; overflow: hidden; }
             .hist-right-panel { width: 100% !important; min-width: 0 !important; border-left: none; border-top: 1px solid #E2E8F0; }
             .mobile-back-btn { display: flex !important; }
 
             /* ── Review Queue ── */
-            .rq-outer { flex-direction: column !important; height: auto !important; overflow: visible !important; }
+            .rq-outer { flex-direction: column !important; height: auto !important; overflow-x: hidden !important; overflow-y: auto !important; }
             .rq-list-panel { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; max-height: 38vh; overflow-y: auto; }
-            .rq-detail-inner { flex-direction: column; }
-            .rq-preview-col { width: 100% !important; }
-            .rq-preview-col .receipt-img-wrap { height: 200px !important; }
+            .rq-detail-inner { flex-direction: column; max-width: 100%; overflow: hidden; }
+            .rq-preview-col { width: 100% !important; max-width: 100% !important; overflow: hidden; }
+            .rq-preview-col .receipt-img-wrap { height: 220px !important; max-width: 100% !important; }
+            .rq-preview-col iframe { max-width: 100% !important; width: 100% !important; }
 
             /* ── Settings ── */
             .settings-grid { grid-template-columns: 1fr !important; }
@@ -1330,13 +1337,13 @@ function historyDocHTML(rec) {
             </div>`;
         }
         // PDF: fetch and re-wrap with correct MIME so browser renders it inline
-        return `<div class="hist-doc-area" style="overflow:hidden;padding:20px;background:#F8FAFC;display:flex;flex-direction:column;">
-            <div id="hist-pdf-wrap" style="flex:1;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);background:#fff;">
+        return `<div class="hist-doc-area" style="overflow:hidden;padding:12px;background:#F8FAFC;display:flex;flex-direction:column;max-width:100%;">
+            <div id="hist-pdf-wrap" style="flex:1;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);background:#fff;max-width:100%;">
                 <div id="hist-pdf-loading" style="flex:1;display:flex;align-items:center;justify-content:center;gap:10px;color:#64748B;font-size:13px;">
                     <div class="spinner" style="width:22px;height:22px;border-width:2px;"></div> Loading PDF…
                 </div>
                 <iframe id="hist-pdf-frame" data-pdf-src="${escHtml(url)}"
-                    style="flex:1;width:100%;border:none;display:none;"
+                    style="flex:1;width:100%;max-width:100%;border:none;display:none;"
                     title="Receipt PDF"></iframe>
             </div>
         </div>`;
