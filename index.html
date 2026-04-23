@@ -293,14 +293,14 @@
             .hist-header-vendor, .hist-header-sep, .hist-header-date { display: none !important; }
 
             /* ── Review Queue ── */
-            .rq-outer { flex-direction: column !important; height: auto !important; overflow: visible !important; }
-            .rq-list-panel { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; max-height: 38vh; overflow-y: auto; }
-            .rq-detail-inner { flex-direction: column; max-width: 100%; overflow: visible; }
-            .rq-detail-panel { flex: none !important; height: auto !important; overflow-y: visible !important; }
-            .rq-preview-col { width: 100% !important; max-width: 100% !important; }
+            .rq-outer { display: block !important; height: auto !important; overflow: visible !important; }
+            .rq-list-panel { display: block !important; width: 100% !important; min-width: 0 !important; max-height: 35vh; overflow-y: auto !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; }
+            .rq-detail-panel { display: block !important; height: auto !important; overflow: visible !important; }
+            .rq-detail-inner { display: block !important; max-width: 100% !important; overflow: visible !important; }
+            .rq-preview-col { display: block !important; width: 100% !important; max-width: 100% !important; margin-bottom: 16px; }
             .rq-preview-col .receipt-img-wrap { height: 420px !important; max-width: 100% !important; overflow: auto !important; }
-            .rq-preview-col iframe { width: 100% !important; height: 420px !important; min-width: 100%; }
-            .rq-fields-col { flex: none !important; width: 100% !important; min-width: 0 !important; height: auto !important; }
+            .rq-preview-col iframe { width: 100% !important; height: 420px !important; }
+            .rq-fields-col { display: block !important; width: 100% !important; height: auto !important; }
 
             /* ── Settings ── */
             .settings-grid { grid-template-columns: 1fr !important; }
