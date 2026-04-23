@@ -293,12 +293,13 @@
             .hist-header-vendor, .hist-header-sep, .hist-header-date { display: none !important; }
 
             /* ── Review Queue ── */
-            .rq-outer { flex-direction: column !important; height: auto !important; overflow-x: hidden !important; overflow-y: auto !important; }
+            .rq-outer { flex-direction: column !important; height: auto !important; overflow: visible !important; }
             .rq-list-panel { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; max-height: 38vh; overflow-y: auto; }
-            .rq-detail-inner { flex-direction: column; max-width: 100%; overflow: hidden; }
+            .rq-detail-inner { flex-direction: column; max-width: 100%; overflow: visible; }
+            .rq-detail-panel { flex: none !important; height: auto !important; overflow-y: visible !important; }
             .rq-preview-col { width: 100% !important; max-width: 100% !important; }
-            .rq-preview-col .receipt-img-wrap { height: 450px !important; max-width: 100% !important; overflow: auto !important; }
-            .rq-preview-col iframe { width: 100% !important; height: 450px !important; min-width: 100%; }
+            .rq-preview-col .receipt-img-wrap { height: 420px !important; max-width: 100% !important; overflow: auto !important; }
+            .rq-preview-col iframe { width: 100% !important; height: 420px !important; min-width: 100%; }
 
             /* ── Settings ── */
             .settings-grid { grid-template-columns: 1fr !important; }
@@ -2613,7 +2614,7 @@ function reviewQueueHTML() {
             : '<i class="fa-solid fa-floppy-disk" style="font-size:12px;"></i> Save Only';
         const isPdf = sel.file_type === 'pdf';
 
-        detailPanel = `<div style="flex:1;padding:24px;overflow-y:auto;">
+        detailPanel = `<div class="rq-detail-panel" style="flex:1;padding:24px;overflow-y:auto;">
             <div class="rq-detail-inner">
                 <!-- Preview -->
                 <div class="rq-preview-col">
