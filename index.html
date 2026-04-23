@@ -308,6 +308,7 @@
             .rq-preview-col .receipt-img-wrap { height: 260px !important; max-width: 100% !important; overflow: auto !important; }
             .rq-preview-col iframe { width: 100% !important; height: 260px !important; }
             .rq-fields-col { display: block !important; width: 100% !important; height: auto !important; }
+            .rq-line-items { display: none !important; }
             .rq-fields-col > div:first-child { font-size: 14px !important; margin-bottom: 10px !important; }
             .rq-fields-col .form-grid-2 { gap: 8px !important; margin-bottom: 10px !important; }
             .rq-fields-col .form-label { margin-bottom: 2px !important; }
@@ -2673,7 +2674,7 @@ function reviewQueueHTML() {
                         </div>
                     </div>
                     <!-- Line Items -->
-                    <div style="margin-bottom:16px;">
+                    <div class="rq-line-items" style="margin-bottom:16px;">
                         <label class="form-label">Line Items</label>
                         <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;overflow:hidden;">
                             <table class="data-table" style="font-size:12.5px;">
