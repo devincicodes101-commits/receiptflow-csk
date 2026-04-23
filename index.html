@@ -2385,8 +2385,50 @@ function startQueuePolling() {
     stopQueuePolling();
     loadReviewQueue();
     _queuePollTimer = setInterval(async () => {
+        if (state.view !== 'review-queue') return;
+        const prevSelStatus = state.reviewItems.find(i => i.id === state.selectedQueueItemId)?.status;
         await loadReviewQueue();
-        if (state.view === 'review-queue') render();
+        const newSelStatus = state.reviewItems.find(i => i.id === state.selectedQueueItemId)?.status;
+        // Full re-render only if selected item's status changed (e.g. processing→done)
+        if (newSelStatus !== prevSelStatus) {
+            render();
+            return;
+        }
+        // Otherwise just refresh the list panel — no iframe blink
+        const listEl = document.getElementById('rq-list-body');
+        if (!listEl) { render(); return; }
+        const items = state.reviewItems;
+        const statusBadge = (s) => {
+            if (s === 'done')       return `<span class="badge badge-posted"><span class="badge-dot"></span>Ready</span>`;
+            if (s === 'processing') return `<span class="badge badge-processing"><span class="badge-dot"></span>Processing</span>`;
+            if (s === 'failed')     return `<span class="badge badge-error"><span class="badge-dot"></span>Failed</span>`;
+            return `<span class="badge" style="background:#F1F5F9;color:#64748B;"><span class="badge-dot" style="background:#94A3B8;"></span>Queued</span>`;
+        };
+        listEl.innerHTML = items.length ? items.map(item => {
+            const isSel = item.id === state.selectedQueueItemId;
+            const isPdf = item.file_type === 'pdf';
+            const ts = item.created_at ? new Date(item.created_at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : '';
+            return `<div onclick="selectQueueItem('${item.id}')" style="padding:11px 14px 11px ${isSel?'11px':'14px'};cursor:pointer;
+                border-left:3px solid ${isSel?'#F97316':'transparent'};
+                background:${isSel?'#FFF5F0':'#fff'};border-bottom:1px solid #F1F5F9;
+                display:flex;align-items:center;gap:10px;user-select:none;">
+                <div style="width:32px;height:36px;border-radius:6px;flex-shrink:0;
+                    background:${isPdf?'#FFF7ED':'#EFF6FF'};border:1px solid ${isPdf?'#FED7AA':'#BFDBFE'};
+                    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;">
+                    <i class="fa-solid ${isPdf?'fa-file-pdf':'fa-file-image'}" style="font-size:12px;color:${isPdf?'#F97316':'#3B82F6'};"></i>
+                    <span style="font-size:7.5px;font-weight:700;color:${isPdf?'#F97316':'#3B82F6'};letter-spacing:0.04em;">${(item.file_type||'').toUpperCase()}</span>
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:12px;font-weight:600;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(item.file_name||'Receipt')}</div>
+                    <div style="font-size:11px;color:#94A3B8;margin-bottom:4px;">${ts}</div>
+                    ${statusBadge(item.status)}
+                </div>
+                ${item.amount ? `<div style="font-size:13px;font-weight:700;color:#0F172A;flex-shrink:0;">${fmt(item.amount)}</div>` : ''}
+            </div>`;
+        }).join('') : `<div style="padding:40px 20px;text-align:center;color:#94A3B8;">
+            <i class="fa-solid fa-inbox" style="font-size:28px;margin-bottom:10px;display:block;"></i>
+            <div style="font-size:13px;">No receipts in queue</div>
+        </div>`;
     }, 5000);
 }
 
@@ -2632,7 +2674,7 @@ function reviewQueueHTML() {
                 ${pendingCount > 0 && processingCount === 0 ? `<div style="font-size:10.5px;color:#94A3B8;"><i class="fa-regular fa-clock" style="font-size:9px;margin-right:3px;"></i>${pendingCount} waiting to process…</div>` : ''}
                 ` : ''}
             </div>
-            <div style="overflow-y:auto;flex:1;">${items.length ? listRows : emptyList}</div>
+            <div id="rq-list-body" style="overflow-y:auto;flex:1;">${items.length ? listRows : emptyList}</div>
         </div>
         <!-- Detail panel -->
         ${detailPanel}
