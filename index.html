@@ -284,11 +284,18 @@
             .mobile-back-btn { display: flex !important; }
 
             /* ── Review Queue ── */
-            .rq-list-panel { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; max-height: 42vh; overflow-y: auto; }
-            .rq-main-panel { flex-direction: column; }
+            .rq-outer { flex-direction: column !important; height: auto !important; overflow: visible !important; }
+            .rq-list-panel { width: 100% !important; min-width: 0 !important; border-right: none !important; border-bottom: 1px solid #E2E8F0; max-height: 38vh; overflow-y: auto; }
             .rq-detail-inner { flex-direction: column; }
             .rq-preview-col { width: 100% !important; }
             .rq-preview-col .receipt-img-wrap { height: 200px !important; }
+
+            /* ── Settings ── */
+            .settings-grid { grid-template-columns: 1fr !important; }
+
+            /* ── Recent Uploads table → scroll ── */
+            .recent-uploads-table { min-width: 480px; }
+            .recent-uploads-table td:first-child { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
             /* ── Line items table ── */
             .items-table { font-size: 11px; }
@@ -898,7 +905,8 @@ function uploadHTML() {
         <div style="margin-top:28px;">
             <div style="font-size:13px;font-weight:600;color:#0F172A;margin-bottom:12px;">Recent Uploads</div>
             <div style="background:#fff;border:1px solid rgba(226,232,240,0.8);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);">
-                <table class="data-table">
+                <div class="table-wrap">
+                <table class="data-table recent-uploads-table">
                     <thead><tr><th>Receipt</th><th>Vendor</th><th>Amount</th><th>Job #</th><th>Status</th></tr></thead>
                     <tbody>
                     ${state.history.slice(0, 5).map(r => {
@@ -920,6 +928,7 @@ function uploadHTML() {
                     </tr>`;}).join('')}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>` : ''}
     </div>`;
@@ -1937,7 +1946,7 @@ function settingsHTML() {
     return `<div class="fade-in">
         <div style="font-size:18px;font-weight:700;color:#0F172A;letter-spacing:-0.02em;margin-bottom:20px;">Settings</div>
 
-        <div style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
+        <div class="settings-grid" style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
 
             <!-- Left: config panels -->
             <div style="display:flex;flex-direction:column;gap:16px;">
@@ -2709,7 +2718,7 @@ function reviewQueueHTML() {
     const progressPct = items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
     const barColor = progressPct === 100 ? '#059669' : (failedCount > 0 && pendingCount === 0 && processingCount === 0 ? '#DC2626' : '#F97316');
 
-    return `<div style="display:flex;height:100%;overflow:hidden;">
+    return `<div class="rq-outer" style="display:flex;height:100%;overflow:hidden;">
         <!-- List panel -->
         <div class="rq-list-panel" style="width:320px;min-width:320px;border-right:1px solid #E2E8F0;display:flex;flex-direction:column;background:#fff;overflow:hidden;">
             <div style="padding:14px;border-bottom:1px solid #F1F5F9;flex-shrink:0;">
